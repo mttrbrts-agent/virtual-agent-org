@@ -102,6 +102,7 @@
       ],
       "maintains": [
         "accordproject/concerto",
+        "accordproject/concerto-codegen",
         "accordproject/template-engine"
       ],
       "github": "dselman"
@@ -139,7 +140,8 @@
         "maintainer"
       ],
       "maintains": [
-        "accordproject/concerto"
+        "accordproject/concerto",
+        "accordproject/concerto-codegen"
       ],
       "github": "jonathan-casey"
     },
@@ -157,6 +159,7 @@
       ],
       "maintains": [
         "accordproject/concerto",
+        "accordproject/concerto-codegen",
         "accordproject/concerto-rust"
       ],
       "github": "ekarademir"
@@ -168,6 +171,7 @@
       ],
       "maintains": [
         "accordproject/concerto",
+        "accordproject/concerto-codegen",
         "accordproject/concerto-rust",
         "accordproject/concerto-dotnet"
       ],
@@ -180,9 +184,20 @@
       ],
       "maintains": [
         "accordproject/concerto",
+        "accordproject/concerto-codegen",
         "accordproject/template-archive"
       ],
       "github": "sanketshevkar"
+    },
+    {
+      "name": "Stefan Blaginov",
+      "roles": [
+        "maintainer"
+      ],
+      "maintains": [
+        "accordproject/concerto-codegen"
+      ],
+      "github": "stefanblaginov"
     }
   ],
   "agents": {

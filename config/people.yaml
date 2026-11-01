@@ -22,7 +22,7 @@ people:
     github: mttrbrts
   - name: Dan Selman
     role: [tsc_member, maintainer]
-    maintains: [concerto, template-engine]
+    maintains: [concerto, concerto-codegen, template-engine]
     github: dselman
   - name: Diana Lease
     role: [tsc_member, maintainer]
@@ -36,23 +36,27 @@ people:
     github: martinhalford
   - name: Jonathan Casey
     role: [tsc_member, maintainer]
-    maintains: [concerto]
+    maintains: [concerto, concerto-codegen]
     github: jonathan-casey
   - name: Tom Brooke
     role: tsc_member
     github: tbrooke
   - name: Ertugrul Karademir
     role: maintainer
-    maintains: [concerto, concerto-rust]
+    maintains: [concerto, concerto-codegen, concerto-rust]
     github: ekarademir
   - name: Jamie Shorten
     role: maintainer
-    maintains: [concerto, concerto-rust, concerto-dotnet]
+    maintains: [concerto, concerto-codegen, concerto-rust, concerto-dotnet]
     github: jamieshorten
   - name: Sanket Shevkar
     role: maintainer
-    maintains: [concerto, template-archive]
+    maintains: [concerto, concerto-codegen, template-archive]
     github: sanketshevkar
+  - name: Stefan Blaginov
+    role: maintainer
+    maintains: [concerto-codegen]
+    github: stefanblaginov
   # - name: Jane Doe
   #   role: [tsc_member, maintainer]
   #   maintains: [concerto]
