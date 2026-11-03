@@ -112,7 +112,7 @@ These are enforced in code; changing them is the owner's decision.
 1. **Ada has no side effects.** She holds no external tools; she acts only through
    `assign_task`, `send_to_matt` and the decision queue. With `decide_action` she may
    mark done, reject superseded, or approve low-risk `github.approve_ci` decisions
-   (decision 52); nothing else.
+   (decision 52), and with `close_task` close a stopped task (decision 53); nothing else.
 2. **Agents never hold credentials for critical actions.** Merging, closing, releasing,
    publishing, posting, emailing, messaging a named person, deleting, spending, and
    spec or permission changes go through `request_action`. The gateway holds those
@@ -169,7 +169,10 @@ public action without a decision id.
   "done when" test and an effort level that sets the session budget (decision 21).
 - **Task lifecycle:** a task is `open`, then `running` once its session starts. When
   the session ends its turn, the task is `done`, or `blocked` if the session's last
-  status report listed blockers; `failed` if the session never started.
+  status report listed blockers; `failed` if the session never started. A session that
+  runs out of budget leaves its task `blocked`; one that ends in error leaves it
+  `failed`, and the hourly tidy-up fails tasks whose session went stale (decision 53).
+  Ada closes a stopped task that is finished in practice with `close_task`.
 - **Follow-ups** (decision 50): when a task ends blocked or an approved decision fails,
   the gateway wakes Ada, at most once per task or decision and 5 times a day, only
   while she is active and schedules are on. She assigns it to an agent who can fix it

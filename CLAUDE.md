@@ -21,7 +21,7 @@ feature easier.
 1. **Ada has no side effects.** She holds no external tools; she acts only through
    `assign_task`, `send_to_matt` and the decision queue. With `decide_action` she may
    mark done, reject superseded, or approve low-risk `github.approve_ci` decisions
-   (decision 52); nothing else.
+   (decision 52), and with `close_task` close a stopped task (decision 53); nothing else.
 2. **Agents never hold credentials for critical actions.** Merging, closing, releasing,
    publishing, posting, emailing, messaging a named person, deleting, spending, and
    spec or permission changes all go through `request_action`, which queues a decision.

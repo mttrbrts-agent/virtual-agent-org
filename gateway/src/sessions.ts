@@ -52,8 +52,10 @@ export async function processSession(ctx: Ctx, sessionId: string): Promise<void>
   const status = session.status === "idle" ? `idle:${session.stop_reason?.type ?? ""}` : session.status;
   await ctx.db.updateSession(sessionId, status, costCents(session), sessionTokens(session));
 
-  if (row?.task_id && session.status === "idle" && session.stop_reason?.type === "end_turn") {
-    await finishTask(ctx, row.task_id, sessionId);
+  if (row?.task_id) {
+    if (status === "idle:end_turn") await finishTask(ctx, row.task_id, sessionId, "finished");
+    else if (status === "idle:budget_reached") await finishTask(ctx, row.task_id, sessionId, "budget");
+    else if (session.status === "terminated" || status === "idle:retries_exhausted") await finishTask(ctx, row.task_id, sessionId, "ended");
   }
   // Tell Matt once, when the session first runs out, not on every later pass.
   if (status === "idle:budget_reached" && row?.status !== "idle:budget_reached") {
@@ -62,15 +64,23 @@ export async function processSession(ctx: Ctx, sessionId: string): Promise<void>
 }
 
 /**
- * A task's session ended its turn. The task is blocked if the session's last status
- * report listed blockers, and Ada is woken to follow it up (decision 50); otherwise it
- * is done, and so is a blocked task it was assigned to follow up. Runs on every pass
- * over an idle session, so it acts only when the status changes.
+ * A task's session stopped. If it finished its turn, the task is blocked when the
+ * session's last status report listed blockers, and Ada is woken to follow it up
+ * (decision 50); otherwise it is done, and so is a blocked task it was assigned to
+ * follow up. A session that ran out of budget leaves its task blocked on that; one
+ * that ended in error leaves it failed (decision 53). Runs on every pass over an idle
+ * session, so it acts only when the status changes.
  */
-async function finishTask(ctx: Ctx, taskId: string, sessionId: string) {
+async function finishTask(ctx: Ctx, taskId: string, sessionId: string, end: "finished" | "budget" | "ended") {
   const task = await ctx.db.getTask(taskId);
   if (!task || ["done", "blocked", "failed", "cancelled"].includes(task.status)) return;
+  if (end === "ended") {
+    await ctx.db.setTask(task.id, "failed");
+    await ctx.db.audit({ agent: task.agent, session_id: sessionId, event_type: "gateway.task_failed", detail: { task: task.id, reason: "session ended before finishing" } });
+    return;
+  }
   const blockers = (await ctx.db.sessionBlockers(sessionId)) ?? [];
+  if (end === "budget") blockers.unshift("Ran out of its session budget before finishing");
   if (blockers.length) {
     await ctx.db.setTask(task.id, "blocked");
     await ctx.db.audit({ agent: task.agent, session_id: sessionId, event_type: "gateway.task_blocked", detail: { task: task.id, blockers: blockers.slice(0, 5) } });
@@ -194,8 +204,10 @@ export const RETENTION = { eventDays: 14, auditDays: 365, staleSessionDays: 7 };
 /** The cron's tidying: idle sessions nobody touches go stale, and old rows are pruned. */
 export async function housekeeping(ctx: Ctx) {
   const stale = await ctx.db.markStaleSessions(RETENTION.staleSessionDays);
+  // Decision 53: a task whose session is over without finishing would otherwise stay running for good.
+  const expired = await ctx.db.failAbandonedTasks(RETENTION.staleSessionDays);
   const pruned = await ctx.db.prune(RETENTION.eventDays, RETENTION.auditDays);
-  if (stale || pruned.events || pruned.tool_results || pruned.audit) {
-    await ctx.db.audit({ event_type: "gateway.housekeeping", detail: { stale, ...pruned } });
+  if (stale || expired.length || pruned.events || pruned.tool_results || pruned.audit) {
+    await ctx.db.audit({ event_type: "gateway.housekeeping", detail: { stale, expired_tasks: expired, ...pruned } });
   }
 }

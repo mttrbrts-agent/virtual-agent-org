@@ -149,6 +149,20 @@ export const TOOLS = {
       required: ["id", "outcome", "note"],
     },
   },
+  close_task: {
+    owner: "ada",
+    description:
+      "Close a task that is finished in practice or no longer needed, e.g. a duplicate. Only a task whose session isn't running. " +
+      "Report it under \"Decided for you\" in the next check-in.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: str("Task id, e.g. T-32"),
+        note: str("Why, in one line Matt can check, e.g. 'duplicates T-34'"),
+      },
+      required: ["id", "note"],
+    },
+  },
   record_evaluation: {
     owner: "ada",
     description: "Store a weekly evaluation for one agent.",

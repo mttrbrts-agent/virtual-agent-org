@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { processSession } from "../src/sessions";
+import { housekeeping, processSession } from "../src/sessions";
 import { makeTestCtx } from "./helpers";
 
 describe("session processing", () => {
@@ -295,5 +295,72 @@ describe("following up blocked tasks (decision 50)", () => {
     const first = await finish(ctx, fakes, ["x"], { sid: "sesn_first" });
     await finish(ctx, fakes, ["still stuck"], { agent: "otto", sid: "sesn_second", follows_up: first });
     expect(adaWakes(fakes).at(-1).args[0].text).toContain(`It was itself a follow-up of ${first}: put it to Matt`);
+  });
+});
+
+describe("tasks whose session stops without finishing (decision 53)", () => {
+  const adaWakes = (fakes: any) => fakes.calls.filter((c: any) => c.method === "createSession" && c.args[0].agentId === "agent_ada");
+
+  /** A running task for Mira whose session is in the given state. */
+  async function started(ctx: any, fakes: any, sid: string, session: Record<string, unknown>) {
+    const task = await ctx.db.createTask({ agent: "mira", title: "Chase the parser PRs", brief: "b" });
+    await ctx.db.upsertSession({ id: sid, agent: "mira", origin: "task", task_id: task.id, started_by: "owner" });
+    await ctx.db.setTask(task.id, "running", sid);
+    fakes.sessions[sid] = { id: sid, agent: { id: "agent_mira" }, ...session };
+    fakes.events[sid] = [];
+    return task.id as string;
+  }
+
+  it("blocks a task whose session ran out of budget, and wakes Ada about it", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    const id = await started(ctx, fakes, "sesn_b", { status: "idle", stop_reason: { type: "budget_reached" } });
+    await processSession(ctx, "sesn_b");
+    expect((await ctx.db.getTask(id))?.status).toBe("blocked");
+    expect(adaWakes(fakes)[0].args[0].text).toContain("Ran out of its session budget before finishing");
+  });
+
+  it("fails a task whose session ended in error, without waking Ada", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    const gone = await started(ctx, fakes, "sesn_t", { status: "terminated" });
+    const retries = await started(ctx, fakes, "sesn_r", { status: "idle", stop_reason: { type: "retries_exhausted" } });
+    await processSession(ctx, "sesn_t");
+    await processSession(ctx, "sesn_r");
+    expect((await ctx.db.getTask(gone))?.status).toBe("failed");
+    expect((await ctx.db.getTask(retries))?.status).toBe("failed");
+    expect(adaWakes(fakes)).toHaveLength(0);
+  });
+
+  it("leaves running and paused sessions' tasks alone", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    const running = await started(ctx, fakes, "sesn_run", { status: "running" });
+    const paused = await started(ctx, fakes, "sesn_p", { status: "idle", stop_reason: { type: "requires_action" } });
+    await processSession(ctx, "sesn_run");
+    await processSession(ctx, "sesn_p");
+    expect((await ctx.db.getTask(running))?.status).toBe("running");
+    expect((await ctx.db.getTask(paused))?.status).toBe("running");
+  });
+
+  it("fails old tasks at the tidy-up once their session is stale or gone", async () => {
+    const { ctx } = makeTestCtx();
+    const sql = (q: string) => (ctx.db as any).db.prepare(q).run();
+    const task = async (sid: string | null, status: string) => {
+      const t = await ctx.db.createTask({ agent: "mira", title: "t", brief: "b" });
+      if (sid) {
+        await ctx.db.upsertSession({ id: sid, agent: "mira", origin: "task", task_id: t.id, status });
+        await ctx.db.setTask(t.id, "running", sid);
+      }
+      return t.id;
+    };
+    const stale = await task("sesn_old", "idle:budget_reached");
+    const live = await task("sesn_live", "running");
+    const recent = await task("sesn_new", "idle:budget_reached");
+    const orphan = await task(null, "");
+    await sql("UPDATE sessions SET updated_at = datetime('now', '-8 days') WHERE id = 'sesn_old'");
+    await sql(`UPDATE tasks SET created_at = datetime('now', '-8 days') WHERE id = '${orphan}'`);
+    await housekeeping(ctx);
+    const status = async (id: string) => (await ctx.db.getTask(id))?.status;
+    expect([await status(stale), await status(live), await status(recent), await status(orphan)]).toEqual(["failed", "running", "running", "failed"]);
+    const row: any = await (ctx.db as any).db.prepare("SELECT detail FROM audit WHERE event_type = 'gateway.housekeeping'").first();
+    expect(JSON.parse(row.detail).expired_tasks).toEqual([stale, orphan]);
   });
 });

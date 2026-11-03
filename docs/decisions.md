@@ -439,3 +439,18 @@ asks to revisit it), **OPEN**, **SUPERSEDED**.
   any call from a conversation a member started (rule 5). Spending, sending to people,
   deleting, merges and releases stay with the owner. Each decision is audited as
   `ada.decided` and her note is kept on the decision.
+
+**53. Closing tasks that never finished** · RESOLVED
+
+- A task closed only when its session ended its turn normally. A session that ran out
+  of budget, ended in error or went stale left its task `running` for good, and nobody
+  could close it, so Ada kept following up work that had stopped.
+- The gateway now closes them: out of budget makes the task `blocked` on that, and Ada
+  is woken within the usual limits (decision 50); an error or exhausted retries makes it
+  `failed`. The hourly tidy-up fails open or running tasks whose session is over or
+  stale, and tasks with no session after 7 days, which also clears the backlog.
+- Ada may close a task herself with `close_task(id, note)`, for one that is finished
+  in practice or a duplicate, only once its session has stopped and never in a
+  conversation a member started. It is audited as `ada.closed_task` and listed under
+  "Decided for you".
+- Not chosen: leaving them open, or a close command for the owner only.

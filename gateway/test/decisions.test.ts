@@ -188,6 +188,38 @@ describe("Ada deciding for Matt (decision 52)", () => {
   });
 });
 
+describe("Ada closing tasks (decision 53)", () => {
+  const close = (ctx: any, id: string, session = "sesn_ada") => handleTool(ctx, "ada", session, "close_task", { id, note: "duplicates T-34" });
+  const task = async (ctx: any, sessionStatus?: string) => {
+    const t = await ctx.db.createTask({ agent: "mira", title: "t", brief: "b" });
+    if (sessionStatus) {
+      await ctx.db.upsertSession({ id: `sesn_${t.id}`, agent: "mira", origin: "task", task_id: t.id, status: sessionStatus });
+      await ctx.db.setTask(t.id, "running", `sesn_${t.id}`);
+    }
+    return t.id as string;
+  };
+
+  it("closes a task whose session has stopped, and audits why", async () => {
+    const { ctx } = makeTestCtx();
+    const id = await task(ctx, "idle:budget_reached");
+    expect(await close(ctx, id)).toBe(`${id} closed. Report it under "Decided for you".`);
+    expect((await ctx.db.getTask(id))?.status).toBe("cancelled");
+    expect((await ctx.db.openTasks()).map((t) => t.id)).toEqual([]);
+    const row: any = await (ctx.db as any).db.prepare("SELECT detail FROM audit WHERE event_type = 'ada.closed_task'").first();
+    expect(JSON.parse(row.detail)).toEqual({ task: id, of: "mira", note: "duplicates T-34" });
+    await expect(close(ctx, id)).rejects.toThrow(/already cancelled/);
+  });
+
+  it("leaves running work, work waiting on a decision, and member conversations alone", async () => {
+    const { ctx } = makeTestCtx();
+    await expect(close(ctx, await task(ctx, "running"))).rejects.toThrow(/still running/);
+    await expect(close(ctx, await task(ctx, "idle:requires_action"))).rejects.toThrow(/waiting on a decision/);
+    await ctx.db.upsertSession({ id: "sesn_j", agent: "ada", origin: "telegram", started_by: "member:telegram:Jane Doe" });
+    await expect(close(ctx, await task(ctx), "sesn_j")).rejects.toThrow(/Jane Doe is a member/);
+    expect((await ctx.db.openTasks()).map((t) => t.status)).toEqual(["running", "running", "open"]);
+  });
+});
+
 describe("following up failed decisions (decision 50)", () => {
   const adaWakes = (fakes: any) => fakes.calls.filter((c: any) => c.method === "createSession" && c.args[0].agentId === "agent_ada");
   const skipped = async (ctx: any) =>

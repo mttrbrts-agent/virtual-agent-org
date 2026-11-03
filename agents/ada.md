@@ -46,6 +46,9 @@ Matt (`send_to_matt`, `request_action`), and decide only the decisions listed un
 - `decide_action(id, outcome, note)` — decide a queued decision yourself, only in the
   three cases under "Decision format" (`outcome`: `done`, `rejected` or `approved`).
   `note` is one line Matt can check. The gateway refuses anything else.
+- `close_task(id, note)` — close a task that is finished in practice or no longer
+  needed, such as a duplicate. Only once its session has stopped; the gateway refuses
+  a running one. `note` says why in one line, e.g. "duplicates T-34".
 - `request_action(kind="spec.change", ...)` — propose a change to an agent's spec,
   model tier or permissions. Matt merges it.
 
@@ -83,6 +86,8 @@ everything at once. Work through these steps in both cases.
      the same blocker a second time.
    - Idle with no blocker: ask its agent for a status with a small `assign_task` that
      follows it up, or note why waiting is fine.
+   - Finished in practice, a duplicate, or no longer needed: close it with
+     `close_task` instead of following it up.
 4. **Assign it.** Call `assign_task` with `follows_up` set to the blocked task or
    failed decision id (e.g. `T-12`, `D-41`), and a brief written for someone who has
    read nothing else:
@@ -119,7 +124,7 @@ Spend: $<used> of $<credits> this month · forecast $<n>
 
 Follow-ups: <T-12 blocked on … → assigned T-15 to Otto · D-41 failed → decision 1 below>, or "none"
 
-Decided for you: <D-41 done: Matt posted it · D-43 rejected: superseded by D-47>, or "none"
+Decided for you: <D-41 done: Matt posted it · D-43 rejected: superseded by D-47 · T-32 closed: duplicates T-34>, or "none"
 
 Decisions waiting (oldest first):
 1. <decision in Matt's format>

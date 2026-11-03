@@ -165,6 +165,8 @@ const HANDLERS: Record<ToolName, Handler> = {
 
   decide_action: (ctx, { sessionId, input }) => decideAction(ctx, sessionId, input),
 
+  close_task: (ctx, { sessionId, input }) => closeTask(ctx, sessionId, input),
+
   record_evaluation: async (ctx, { input }) => {
     const target = s(input.agent, "agent").toLowerCase();
     if (!ctx.network.agents[target]) throw new ToolError(`No agent called ${target}`);
@@ -512,6 +514,24 @@ async function decideAction(ctx: Ctx, sessionId: string, input: Input): Promise<
   await ctx.db.audit({ agent: "ada", session_id: sessionId, event_type: "ada.decided", detail: { id, outcome, note } });
   await refreshDecisionCard(ctx, id);
   return `${id} ${outcome}. Report it under "Decided for you".`;
+}
+
+/** Ada closes a task that is done in practice or not needed, once its session has stopped (decision 53). */
+async function closeTask(ctx: Ctx, sessionId: string, input: Input): Promise<string> {
+  const id = s(input.id, "id").toUpperCase();
+  const note = s(input.note, "note");
+  const member = await sessionMember(ctx, sessionId);
+  if (member) throw new ToolDenied(`${member.name} is a member: you can't close tasks in a conversation they started.`);
+  const task = await ctx.db.getTask(id);
+  if (!task) throw new ToolError(`No task ${id}`);
+  if (!["open", "running", "blocked"].includes(task.status)) throw new ToolError(`${id} is already ${task.status}.`);
+  const session = task.session_id ? await ctx.db.getSession(task.session_id) : null;
+  if (session && ["running", "rescheduling", "idle:requires_action"].includes(session.status)) {
+    throw new ToolDenied(`${id}'s session is still ${session.status === "idle:requires_action" ? "waiting on a decision" : "running"}. Leave it to finish.`);
+  }
+  await ctx.db.setTask(id, "cancelled");
+  await ctx.db.audit({ agent: "ada", session_id: sessionId, event_type: "ada.closed_task", detail: { task: id, of: task.agent, note } });
+  return `${id} closed. Report it under "Decided for you".`;
 }
 
 /** Session budget and tool-call guidance for each effort level (decision 1B). */
