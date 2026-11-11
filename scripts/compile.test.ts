@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { compile, validate } from "./compile";
+import { compile, cronTime, validate } from "./compile";
 import { loadAll } from "./lib";
 
 const withPeople = (people: object[], peopleIds: object) => ({ ...loadAll(), people: { people }, peopleIds }) as ReturnType<typeof loadAll>;
@@ -175,4 +175,64 @@ test("compile emits the loop settings", () => {
   assert.deepEqual([proposal_gap_days, min_decided, min_days], [all.network.self_improvement?.proposal_gap_days ?? 7, all.network.self_improvement?.min_decided ?? 10, all.network.self_improvement?.min_days ?? 14]);
   assert.equal(out.network_repo, "accordproject/virtual-agent-org");
   assert.equal(out.agents.mandla.requestable.length, 0);
+});
+
+test("validate checks effort levels and tasks in models.yaml (decision 65)", () => {
+  const cfg = loadAll();
+  const mira = { ...cfg.models.agents.mira, effort: "lots" as never, tasks: { triage: { tier: "fastest" }, review: "standard" as never, check: { tier: "deep", effort: "huge" as never } } };
+  const errs = validate({ ...cfg, models: { ...cfg.models, agents: { ...cfg.models.agents, mira } } });
+  assert.ok(errs.includes("mira: effort must be one of low, medium, high, xhigh, max"));
+  assert.ok(errs.includes('mira.triage: unknown tier "fastest"'));
+  assert.ok(errs.includes("mira.review: write a task as { tier, effort }"));
+  assert.ok(errs.includes("mira.check: effort must be one of low, medium, high, xhigh, max"));
+});
+
+test("validate checks a schedule's task, and refuses a bare tier", () => {
+  const cfg = loadAll();
+  const schedules = { schedules: [...cfg.schedules.schedules, { name: "x", agent: "vera", cron: "0 9 * * *", budget_usd: 1, prompt: "p", task: "nope" }, { name: "y", agent: "vera", cron: "0 9 * * *", budget_usd: 1, prompt: "p", tier: "fast" } as never] };
+  const errs = validate({ ...cfg, schedules });
+  assert.ok(errs.includes('schedule x: vera has no task "nope" in models.yaml'));
+  assert.ok(errs.includes("schedule y: name a task from models.yaml with task:, not a tier"));
+});
+
+test("the triage, review and analysis schedules run on their tasks", () => {
+  const byName = Object.fromEntries(loadAll().schedules.schedules.map((s) => [s.name, s.task]));
+  assert.equal(byName["mira-triage"], "triage");
+  assert.equal(byName["mira-review"], "review");
+  assert.equal(byName["vera-weekly"], "analysis");
+  assert.equal(byName["ada-weekly-evaluation"], "evaluation");
+});
+
+test("compile passes each agent's effort and tasks to the gateway", () => {
+  const out = compile(loadAll());
+  assert.deepEqual(
+    { model: out.agents.mira.model, effort: out.agents.mira.effort, triage: out.agents.mira.tasks?.triage, review: out.agents.mira.tasks?.review },
+    { model: "claude-sonnet-5-5", effort: "medium", triage: { model: "claude-haiku-5-5", effort: "medium" }, review: { model: "claude-sonnet-5-5", effort: "high" } },
+  );
+  assert.deepEqual(out.agents.ada.tasks?.evaluation, { model: "claude-opus-5-5", effort: "medium" });
+  assert.equal(out.agents.ada.effort, "low");
+  assert.deepEqual(out.agents.mandla.tasks?.large_change, { model: "claude-opus-5-5", effort: "high" });
+});
+
+test("cronTime reads a once-a-day cron", () => {
+  assert.equal(cronTime("0 8 * * *"), "08:00");
+  assert.equal(cronTime("30 17 * * *"), "17:30");
+  assert.equal(cronTime("0 8,13 * * *"), null);
+  assert.equal(cronTime("0 9 * * 1"), null);
+});
+
+test("triage_checks follow the daily triage schedule (decision 65)", () => {
+  const cfg = loadAll();
+  assert.deepEqual(compile(cfg).triage_checks, { after: "08:00", times: ["13:00", "18:00"], budget_cents: 100 });
+  const withChecks = (times: string[], cron = "0 8 * * *") =>
+    validate({
+      ...cfg,
+      network: { ...cfg.network, budgets: { ...cfg.network.budgets, triage_checks: { times, usd: 1 } } },
+      schedules: { schedules: cfg.schedules.schedules.map((s) => (s.name === "mira-triage" ? { ...s, cron } : s)) },
+    });
+  assert.ok(withChecks(["07:00"]).includes("budgets.triage_checks: times must be in order and after the mira-triage run (08:00)"));
+  assert.ok(withChecks(["18:00", "13:00"]).includes("budgets.triage_checks: times must be in order and after the mira-triage run (08:00)"));
+  assert.ok(withChecks(["1pm"]).includes('budgets.triage_checks: "1pm" should be HH:MM'));
+  assert.ok(withChecks(["13:00"], "0 8,13 * * *").includes("budgets.triage_checks needs a mira-triage schedule that runs once a day at a fixed time"));
+  assert.deepEqual(withChecks(["13:00", "18:00"]), []);
 });

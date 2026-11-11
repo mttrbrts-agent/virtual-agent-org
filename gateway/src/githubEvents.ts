@@ -5,7 +5,7 @@
 // Events carry no rights (decision 33), and the gateway keeps no text from them.
 
 import { inScope, safeJson } from "./actions";
-import { AgentUnavailable, refreshDecisionCard, startSession } from "./agents";
+import { AgentUnavailable, refreshDecisionCard, startSession, taskModel } from "./agents";
 import type { Ctx } from "./context";
 import type { GitHubEvent, Wake } from "./db";
 import { parseTarget, type RepoRef } from "./github";
@@ -328,7 +328,9 @@ async function start(ctx: Ctx, w: Wake, budgetCents: number, f?: PrFacts) {
     }
     await ctx.db.setTask(task.id, "running", sessionId);
   } else {
-    sessionId = await startSession(ctx, w.agent, wakePrompt(w), "github", "schedule", { budgetCents });
+    // A review wake runs as Mira's review task, a first response as her triage task (decision 65).
+    const model = taskModel(ctx, w.agent, w.trigger === "review" ? "review" : "triage");
+    sessionId = await startSession(ctx, w.agent, wakePrompt(w), "github", "schedule", { budgetCents, ...(model ? { model } : {}) });
   }
   await ctx.db.startWake(w.id, sessionId);
   await ctx.db.audit({ agent: w.agent, session_id: sessionId, event_type: "gateway.wake_started", detail: { trigger: w.trigger, target: w.target, sha: w.sha || undefined } });
@@ -374,14 +376,20 @@ export function mergeBrief(f: PrFacts): string {
 
 // ---- the daily check ----------------------------------------------------------------
 
-/** The local date and whether it is past the daily check's time (05:30 in the network's timezone). */
-export function dailyCheckDue(timezone: string, now = new Date()): { date: string; due: boolean } {
+/** The local date and the minutes since local midnight in the network's timezone. */
+export function localClock(timezone: string, now = new Date()): { date: string; minutes: number } {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-GB", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
       .formatToParts(now)
       .map((p) => [p.type, p.value]),
   );
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, due: Number(parts.hour) * 60 + Number(parts.minute) >= 5 * 60 + 30 };
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+
+/** The local date and whether it is past the daily check's time (05:30 in the network's timezone). */
+export function dailyCheckDue(timezone: string, now = new Date()): { date: string; due: boolean } {
+  const { date, minutes } = localClock(timezone, now);
+  return { date, due: minutes >= 5 * 60 + 30 };
 }
 
 /**
@@ -425,4 +433,64 @@ export async function dailyCheck(ctx: Ctx, now = new Date()) {
     }
   }
   if (checked || errors.length) await ctx.db.audit({ event_type: "gateway.github_daily_check", detail: { date, checked, closed, errors } });
+}
+
+// ---- Mira's extra triage passes (decision 65) ------------------------------------------
+
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/** What an extra triage pass tells Mira: what was opened, and since when. Numbers only, nothing from GitHub's text. */
+export function triagePrompt(since: string, opened: string[]): string {
+  return [
+    `Triage pass from the gateway: these were opened since ${since} in the repos in scope:`,
+    ...opened.map((o) => `- ${o}`),
+    "",
+    'Do triage steps 1 to 3 in your instructions ("Triage pass") for these only. Leave everything else, nudges and',
+    "closures included, to the morning pass. Don't review code. Then call report_status and end the session.",
+  ].join("\n");
+}
+
+/**
+ * Mira's triage runs every morning as a scheduled deployment. At the later times in
+ * `triage_checks` the gateway asks GitHub what was opened in the repos in scope since the
+ * pass before, and starts a triage session only if something was. Runs from the
+ * five-minute cron; each time is claimed once a day. If the gateway missed a time (it was
+ * down), the next pass looks back to the last one that ran. Never throws.
+ */
+export async function triageCheck(ctx: Ctx, now = new Date()) {
+  const cfg = ctx.network.triage_checks;
+  if (!cfg?.times.length || !ctx.network.schedules_enabled) return;
+  const { date, minutes } = localClock(ctx.network.timezone, now);
+  const due = cfg.times.filter((t) => minutesOf(t) <= minutes);
+  let since: string | null = null;
+  for (let i = 0; i < due.length; i++) {
+    if (await ctx.db.claimEvent(`triage-check:${date}:${due[i]}`)) since ??= i ? due[i - 1] : cfg.after;
+  }
+  if (!since) return;
+  const slot = due[due.length - 1];
+  // Back from now to the start of the minute `since` names, local time.
+  const sinceAt = new Date(now.getTime() - now.getSeconds() * 1000 - now.getMilliseconds() - (minutes - minutesOf(since)) * 60_000);
+  const opened: string[] = [];
+  const errors: string[] = [];
+  try {
+    const gh = await ctx.github();
+    for (const full of ctx.network.repos) {
+      const [owner, repo] = full.split("/");
+      try {
+        for (const i of await gh.openedSince({ owner, repo }, sinceAt.toISOString())) opened.push(`${full}#${i.number} (${i.pr ? "PR" : "issue"})`);
+      } catch (err) {
+        errors.push(`${full}: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
+      }
+    }
+    if (!opened.length) {
+      await ctx.db.audit({ agent: "mira", event_type: "gateway.triage_skipped", detail: { slot, since, errors: errors.length ? errors : undefined } });
+      return;
+    }
+    const model = taskModel(ctx, "mira", "triage");
+    const sessionId = await startSession(ctx, "mira", triagePrompt(since, opened), "github", "schedule", { budgetCents: cfg.budget_cents, ...(model ? { model } : {}) });
+    await ctx.db.audit({ agent: "mira", session_id: sessionId, event_type: "gateway.triage_started", detail: { slot, since, opened: opened.length, errors: errors.length ? errors : undefined } });
+  } catch (err) {
+    const why = err instanceof AgentUnavailable ? err.message : `error: ${err instanceof Error ? err.message : String(err)}`;
+    await ctx.db.audit({ agent: "mira", event_type: "gateway.triage_error", detail: { slot, since, why } }).catch(() => undefined);
+  }
 }

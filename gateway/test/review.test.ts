@@ -129,7 +129,8 @@ describe("review check (decision 2A)", () => {
     expect(create.text).toContain("- blocking (high) · correctness · src/parser.ts:10: null deref when the input is empty");
     expect(create.text).toContain("medium risk (changes code, 40 changed lines)");
     expect(create.text).toContain("in a neutral tone");
-    expect(create.model).toBeUndefined();
+    // Mira's review task in models.yaml (decision 65): the agent's own effort would be lower.
+    expect(create.model).toEqual({ id: "claude-sonnet-5-5", effort: "high" });
     expect(create.budgetCents).toBe(150);
   });
 
@@ -148,8 +149,19 @@ describe("review check (decision 2A)", () => {
     const { ctx, fakes } = setup({ additions: 600 });
     await check(ctx, "sesn_review");
     const create = fakes.calls.find((c) => c.method === "createSession")!.args[0] as any;
-    expect(create.model).toBe("claude-opus-5-5");
+    expect(create.model).toEqual({ id: "claude-opus-5-5", effort: "high" });
     expect(create.budgetCents).toBe(300);
+  });
+
+  it("falls back to the deep tier's model when models.yaml has no check task", async () => {
+    const gh = fakeGitHub({ additions: 600 });
+    const base = makeTestCtx().ctx.network;
+    const mira = { ...base.agents.mira, tasks: undefined };
+    const network = { ...base, review_check_required: true, agents: { ...base.agents, mira } };
+    const { ctx, fakes } = makeTestCtx({ network, github: async () => gh as any });
+    await check(ctx, "sesn_review");
+    const create = fakes.calls.find((c) => c.method === "createSession")!.args[0] as any;
+    expect(create.model).toEqual({ id: "claude-opus-5-5" });
   });
 
   it("refuses a draft of an old head, and a check starting another check", async () => {

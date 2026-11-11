@@ -362,7 +362,7 @@ describe("read_audit (decision 47)", () => {
     const a = await messageAgent(ctx, "mira", { telegram: 42 }, "hi", "owner");
     expect((await ctx.db.getSession(a))?.model).toBe("claude-sonnet-5-5");
     const { startSession } = await import("../src/agents");
-    const b = await startSession(ctx, "mira", "check", "task", "owner", { model: "claude-opus-5-5" });
+    const b = await startSession(ctx, "mira", "check", "task", "owner", { model: { id: "claude-opus-5-5", effort: "high" } });
     expect((await ctx.db.getSession(b))?.model).toBe("claude-opus-5-5");
   });
 });

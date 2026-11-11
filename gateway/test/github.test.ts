@@ -6,6 +6,7 @@ import type { Ctx } from "../src/context";
 import { Db } from "../src/db";
 import type { Env } from "../src/env";
 import { decisionButtons, decisionCard } from "../src/format";
+import { GitHub } from "../src/github";
 import {
   activityLine,
   applyEvent,
@@ -13,8 +14,11 @@ import {
   dailyCheck,
   dailyCheckDue,
   dispatchWakes,
+  localClock,
   normalise,
   REVIEW_DELAY,
+  triageCheck,
+  triagePrompt,
 } from "../src/githubEvents";
 import worker from "../src/index";
 import { verifyGitHub } from "../src/webhookVerify";
@@ -288,8 +292,21 @@ describe("waking Mira", () => {
     const [s] = sessions(fakes);
     expect(s.text).toContain(`GitHub wake: review ${PR} at ${HEAD.slice(0, 7)}`);
     expect(s.budgetCents).toBe(100);
+    // Mira's review task in models.yaml (decision 65).
+    expect(s.model).toEqual({ id: "claude-sonnet-5-5", effort: "high" });
     expect((await ctx.db.getSession("sesn_1"))?.origin).toBe("github");
+    expect((await ctx.db.getSession("sesn_1"))?.model).toBe("claude-sonnet-5-5");
     expect((await wakes(ctx))[0].status).toBe("started");
+  });
+
+  it("runs a first response as Mira's triage task", async () => {
+    const { ctx, fakes } = setup();
+    await ctx.db.queueWake({ trigger: "first_response", target: PR, agent: "mira" });
+    await dispatchWakes(ctx);
+    const [s] = sessions(fakes);
+    expect(s.text).toContain(`GitHub wake: first response to ${PR}`);
+    expect(s.model).toEqual({ id: "claude-haiku-5-5", effort: "medium" });
+    expect((await ctx.db.getSession("sesn_1"))?.model).toBe("claude-haiku-5-5");
   });
 
   it("waits while CI runs, and drops a draft, a moved head or a reviewed head", async () => {
@@ -487,5 +504,111 @@ describe("activity in pr_queue", () => {
         { event: "workflow_run", action: "completed", detail: "success" },
       ]),
     ).toBe("last 3 days: 1 push, 2 comments; latest CI success");
+  });
+});
+
+describe("Mira's extra triage passes (decision 65)", () => {
+  const CHECKS = { after: "08:00", times: ["13:00", "18:00"], budget_cents: 100 };
+  const triage = (gh = fakeGitHub(), network: Partial<typeof NETWORK> = {}) =>
+    setup(gh, { network: { ...NETWORK, triage_checks: CHECKS, repos: ["accordproject/concerto", "accordproject/apap"], ...network } });
+  const sessions = (fakes: { calls: { method: string; args: any[] }[] }) => fakes.calls.filter((c) => c.method === "createSession").map((c) => c.args[0]);
+  const audits = async (ctx: Ctx, type: string) =>
+    (await (ctx.db as any).db.prepare("SELECT detail FROM audit WHERE event_type = ? ORDER BY id").bind(type).all()).results.map((r: any) => JSON.parse(r.detail));
+  // 13:05:30 in London on a winter day (UTC+0) and 18:02 on a summer day (UTC+1).
+  const WINTER_1305 = new Date("2026-11-11T13:05:30Z");
+
+  it("asks GitHub's issues endpoint and keeps only what was created since", async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      urls.push(url);
+      const items = [
+        { number: 9, created_at: "2026-11-11T09:00:00Z", pull_request: {} },
+        { number: 8, created_at: "2026-11-11T08:00:00Z" },
+        { number: 2, created_at: "2026-10-01T10:00:00Z", pull_request: {} }, // old, but updated since
+      ];
+      return new Response(JSON.stringify(items), { status: 200 });
+    }) as unknown as typeof fetch;
+    const got = await new GitHub("t", fetchImpl).openedSince({ owner: "accordproject", repo: "concerto" }, "2026-11-11T08:00:00.000Z");
+    expect(got).toEqual([{ number: 9, pr: true }, { number: 8, pr: false }]);
+    expect(urls[0]).toBe(
+      "https://api.github.com/repos/accordproject/concerto/issues?state=all&since=2026-11-11T08%3A00%3A00.000Z&sort=created&direction=desc&per_page=100",
+    );
+  });
+
+  it("reads the local clock", () => {
+    expect(localClock("Europe/London", new Date("2026-07-11T17:02:00Z"))).toEqual({ date: "2026-07-11", minutes: 18 * 60 + 2 });
+  });
+
+  it("starts a triage pass on the triage task when something was opened since the morning pass", async () => {
+    const gh = fakeGitHub();
+    gh.opened["accordproject/concerto"] = [{ number: 41, pr: true }, { number: 40, pr: false }];
+    const { ctx, fakes } = triage(gh);
+    await triageCheck(ctx, WINTER_1305);
+    expect(gh.openedCalls).toEqual([
+      { repo: "accordproject/concerto", since: "2026-11-11T08:00:00.000Z" },
+      { repo: "accordproject/apap", since: "2026-11-11T08:00:00.000Z" },
+    ]);
+    const [s] = sessions(fakes);
+    expect(s.text).toBe(triagePrompt("08:00", ["accordproject/concerto#41 (PR)", "accordproject/concerto#40 (issue)"]));
+    expect(s.text).toContain("Leave everything else, nudges and\nclosures included, to the morning pass");
+    expect(s).toMatchObject({ agentId: "agent_mira", budgetCents: 100, model: { id: "claude-haiku-5-5", effort: "medium" } });
+    expect((await ctx.db.getSession("sesn_1"))?.origin).toBe("github");
+    expect(await audits(ctx, "gateway.triage_started")).toEqual([{ slot: "13:00", since: "08:00", opened: 2 }]);
+
+    // Once per time a day: later cron runs start nothing.
+    await triageCheck(ctx, new Date("2026-11-11T13:10:00Z"));
+    expect(sessions(fakes)).toHaveLength(1);
+  });
+
+  it("starts nothing when nothing was opened, or before the first time", async () => {
+    const gh = fakeGitHub();
+    const { ctx, fakes } = triage(gh);
+    await triageCheck(ctx, new Date("2026-11-11T12:59:00Z"));
+    expect(gh.openedCalls).toEqual([]);
+    await triageCheck(ctx, WINTER_1305);
+    expect(sessions(fakes)).toEqual([]);
+    expect(await audits(ctx, "gateway.triage_skipped")).toEqual([{ slot: "13:00", since: "08:00" }]);
+  });
+
+  it("looks back to the pass before, or the last one that ran if the gateway missed one", async () => {
+    const gh = fakeGitHub();
+    const { ctx } = triage(gh);
+    await triageCheck(ctx, WINTER_1305);
+    await triageCheck(ctx, new Date("2026-11-11T18:00:00Z"));
+    expect(gh.openedCalls.at(-1)?.since).toBe("2026-11-11T13:00:00.000Z");
+
+    // A summer day the gateway first runs at 18:02 local: 13:00 was missed, so it looks back to 08:00 local (07:00 UTC).
+    const missed = triage(fakeGitHub());
+    await triageCheck(missed.ctx, new Date("2026-07-11T17:02:00Z"));
+    expect(missed.gh.openedCalls.map((c) => c.since)).toEqual(["2026-07-11T07:00:00.000Z", "2026-07-11T07:00:00.000Z"]);
+    expect(await audits(missed.ctx, "gateway.triage_skipped")).toEqual([{ slot: "18:00", since: "08:00" }]);
+  });
+
+  it("does nothing with schedules off or no times, and records a failure without throwing", async () => {
+    for (const network of [{ schedules_enabled: false }, { triage_checks: undefined }]) {
+      const gh = fakeGitHub();
+      const { ctx } = triage(gh, network);
+      await triageCheck(ctx, WINTER_1305);
+      expect(gh.openedCalls).toEqual([]);
+    }
+
+    const gh = fakeGitHub();
+    gh.failOpened = "GitHub GET /issues: 502";
+    const { ctx, fakes } = triage(gh);
+    await triageCheck(ctx, WINTER_1305);
+    expect(sessions(fakes)).toEqual([]);
+    expect(await audits(ctx, "gateway.triage_skipped")).toEqual([
+      { slot: "13:00", since: "08:00", errors: ["accordproject/concerto: GitHub GET /issues: 502", "accordproject/apap: GitHub GET /issues: 502"] },
+    ]);
+  });
+
+  it("names a paused Mira when there is work", async () => {
+    const gh = fakeGitHub();
+    gh.opened["accordproject/apap"] = [{ number: 3, pr: true }];
+    const { ctx, fakes } = triage(gh);
+    await ctx.db.setAgentStatus("mira", "paused");
+    await triageCheck(ctx, WINTER_1305);
+    expect(sessions(fakes)).toEqual([]);
+    expect((await audits(ctx, "gateway.triage_error"))[0]).toMatchObject({ slot: "13:00", why: expect.stringMatching(/paused/i) });
   });
 });

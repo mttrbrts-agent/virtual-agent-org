@@ -2,7 +2,8 @@
 // propose one, and what approving it does (record a change, start a task for Mandla).
 
 import { safeJson, type ExecResult, type Normalised, type Payload } from "./actions";
-import { AgentUnavailable, startSession } from "./agents";
+import { AgentUnavailable, startSession, taskModel } from "./agents";
+import type { ModelChoice } from "./config";
 import type { Ctx } from "./context";
 import { NOT_JUDGEMENT, type Change, type Decision } from "./db";
 import { parseTarget } from "./github";
@@ -25,10 +26,14 @@ const DAY = 86_400_000;
 /** Changes to these types touch more than wording, so get a larger budget and the deep tier. */
 const isLarge = (type: string) => !["wording", "tier"].includes(type);
 
-/** The budget and model of Mandla's task for a change of this type, first attempt or follow-up. */
-export function changeBudget(ctx: Ctx, type: string): { cents: number; model?: string } {
+/**
+ * The budget and model of Mandla's task for a change of this type, first attempt or follow-up.
+ * A large change runs as Mandla's large_change task in models.yaml (decision 65).
+ */
+export function changeBudget(ctx: Ctx, type: string): { cents: number; model?: ModelChoice } {
   const cents = ctx.network.self_improvement?.task_cents ?? { small: 100, large: 500 };
-  const model = isLarge(type) ? ctx.network.model_tiers?.deep : undefined;
+  const deep = ctx.network.model_tiers?.deep;
+  const model = isLarge(type) ? (taskModel(ctx, "mandla", "large_change") ?? (deep ? { id: deep } : undefined)) : undefined;
   return { cents: isLarge(type) ? cents.large : cents.small, ...(model ? { model } : {}) };
 }
 

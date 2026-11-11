@@ -251,7 +251,7 @@ describe("spec.change proposals", () => {
     const tool = await propose(ctx, "mira", { ...PAYLOAD, change_type: "tool" });
     await approve(ctx, tool.match(/D-\d+/)![0]);
     const second = fakes.calls.filter((c) => c.method === "createSession").map((c) => c.args[0] as any)[1];
-    expect(second).toMatchObject({ budgetCents: 500, model: NETWORK.model_tiers!.deep });
+    expect(second).toMatchObject({ budgetCents: 500, model: { id: NETWORK.model_tiers!.deep, effort: "high" } });
   });
 
   it("fails the decision if evidence has gone by approval", async () => {
@@ -507,7 +507,7 @@ describe("Mandla's tasks that end without a PR", () => {
 
     const large = await blocked("tool");
     await follow(large.ctx, "mandla", large.task.id);
-    expect(mandlaSessions(large.fakes).at(-1)).toMatchObject({ budgetCents: 500, model: NETWORK.model_tiers!.deep });
+    expect(mandlaSessions(large.fakes).at(-1)).toMatchObject({ budgetCents: 500, model: { id: NETWORK.model_tiers!.deep, effort: "high" } });
   });
 
   it("a member can't set Mandla going through Ada", async () => {

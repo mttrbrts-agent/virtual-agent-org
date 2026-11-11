@@ -58,6 +58,11 @@ budgets:
     review: { daily: 6, usd: 1.00 }
     merge: { daily: 6, usd: 0.50 }
     first_response: { daily: 10, usd: 0.50 }
+  # Mira's extra triage passes (decision 65). The mira-triage schedule always runs once a
+  # day, for nudges and closures. At each time here (local) the gateway starts a further
+  # pass only if a PR or issue was opened in a repo in scope since the pass before.
+  # usd: each pass's budget. Needs schedules_enabled; remove to turn the extra passes off.
+  triage_checks: { times: ["13:00", "18:00"], usd: 1.00 }
   # Session budget for each of Mandla's tasks (USD): small is wording and tier changes,
   # large is tool changes and the owner-only types.
   mechanic_small_usd: 1

@@ -36,13 +36,15 @@ export function loadSpecs(): Record<string, Spec> {
 export interface NetworkYaml {
   network: { name: string; timezone: string; current_phase: number; schedules_enabled?: boolean };
   github: { org: string; sandbox_repo: string; network_repo: string; repos: string[] };
-  budgets: { monthly_credit_usd: number; member_daily_messages?: number; follow_up_daily_wakes?: number; follow_up_budget_usd?: number; mechanic_small_usd?: number; mechanic_large_usd?: number; github_wakes?: Record<string, { daily: number; usd: number }> };
+  budgets: { monthly_credit_usd: number; member_daily_messages?: number; follow_up_daily_wakes?: number; follow_up_budget_usd?: number; mechanic_small_usd?: number; mechanic_large_usd?: number; github_wakes?: Record<string, { daily: number; usd: number }>; triage_checks?: { times: string[]; usd: number } };
   self_improvement?: { since: string | null; stale_days: number; proposal_gap_days?: number; min_decided?: number; min_days?: number; commit_author: { name: string; email: string } };
   agents: Record<string, number>;
 }
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Effort = (typeof EFFORTS)[number];
 export interface ModelsYaml {
   tiers: Record<string, string>;
-  agents: Record<string, { default: string; tasks?: Record<string, string> }>;
+  agents: Record<string, { default: string; effort?: Effort; tasks?: Record<string, { tier: string; effort?: Effort }> }>;
 }
 export interface PermissionsYaml {
   discord_approval_max_risk?: "none" | "low" | "medium";
@@ -63,7 +65,8 @@ export interface PermissionsYaml {
   >;
 }
 export interface SchedulesYaml {
-  schedules: { name: string; agent: string; cron: string; budget_usd: number; prompt: string; tier?: string }[];
+  /** `task` names one of the agent's tasks in models.yaml; the run uses its tier and effort. */
+  schedules: { name: string; agent: string; cron: string; budget_usd: number; prompt: string; task?: string }[];
 }
 export interface PeopleYaml {
   people: {

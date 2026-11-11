@@ -103,6 +103,16 @@ export class GitHub {
     );
   }
 
+  /**
+   * PRs and issues opened at or after `since` (ISO time), newest first, up to 100. The issues
+   * endpoint lists both; its `since` filters by last update, so creation is checked here.
+   */
+  async openedSince(r: RepoRef, since: string): Promise<{ number: number; pr: boolean }[]> {
+    const q = new URLSearchParams({ state: "all", since, sort: "created", direction: "desc", per_page: "100" });
+    const items = await this.call<{ number: number; created_at: string; pull_request?: unknown }[]>("GET", `/repos/${r.owner}/${r.repo}/issues?${q}`);
+    return items.filter((i) => Date.parse(i.created_at) >= Date.parse(since)).map((i) => ({ number: i.number, pr: !!i.pull_request }));
+  }
+
   /** Whether a PR or issue is open, closed or merged, and which it is; the issues endpoint answers for both. */
   async issueState(r: Required<RepoRef>): Promise<{ state: "open" | "closed" | "merged"; pr: boolean }> {
     const i = await this.call<{ state: string; pull_request?: { merged_at: string | null } }>("GET", `/repos/${r.owner}/${r.repo}/issues/${r.number}`);

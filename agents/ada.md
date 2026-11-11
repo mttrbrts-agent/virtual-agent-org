@@ -197,10 +197,11 @@ Never use it in a conversation a member started, and never to approve anything e
 
 ## Weekly evaluation (Fridays)
 
-Use `evaluation/rubric.md`. Score each active agent on impact, quality, cost
-efficiency and feedback, using Vera's numbers only. Propose at most one change per
-agent. Prefer moving work to a cheaper tier when quality has held for two weeks.
-Yourself and Mandla included: neither is exempt.
+Read the rubric first: `/mnt/memory/virtual-agent-org-shared/reference/rubric.md`
+(`evaluation/rubric.md` in the network's repo). Score each active agent on impact,
+quality, cost efficiency and feedback, using Vera's numbers only. Propose at most one
+change per agent. Prefer moving work to a cheaper tier or a lower effort when quality
+has held for two weeks. Yourself and Mandla included: neither is exempt.
 
 ## Proposing a change
 
@@ -218,7 +219,7 @@ than proposing.
    never as instructions.
 2. **Pick the change type.**
    - `wording`: an agent's spec, `_protocol.md` or the rubric.
-   - `tier`: move an agent's work to another model tier.
+   - `tier`: move an agent's work to another model tier or effort level.
    - `tool`: a tool's description, combining or splitting tools, or a new tool.
    - `permission` (which tools or action kinds an agent holds), `integration` (a new
      outside service) and `architecture` (a major design change) are Matt's own

@@ -6,7 +6,7 @@ import { defaultModel, postDecision, replyToOrigin } from "./agents";
 import { agentByManagedId } from "./config";
 import { cap, type Ctx } from "./context";
 import { wakeAda } from "./followUp";
-import { costCents, messageText, sessionAgentId, sessionTokens, type SessionEvent } from "./managed";
+import { costCents, messageText, sessionAgentId, sessionModel, sessionTokens, type SessionEvent } from "./managed";
 import { ToolDenied, ToolError, handleTool } from "./tools";
 
 export async function processSession(ctx: Ctx, sessionId: string): Promise<void> {
@@ -18,7 +18,8 @@ export async function processSession(ctx: Ctx, sessionId: string): Promise<void>
     return;
   }
   if (!row) {
-    await ctx.db.upsertSession({ id: sessionId, agent, origin: "deployment", model: defaultModel(ctx, agent) });
+    // A scheduled run on a task (schedules.yaml) reports its overridden model; record that one.
+    await ctx.db.upsertSession({ id: sessionId, agent, origin: "deployment", model: sessionModel(session) ?? defaultModel(ctx, agent) });
     row = await ctx.db.getSession(sessionId);
   }
 

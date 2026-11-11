@@ -6,40 +6,59 @@ tiers:
   standard: claude-sonnet-5-5   # drafting, code review, analysis
   fast:     claude-haiku-5-5    # triage, classification, filtering
 
-# Default tier per agent, plus per-task overrides.
+# Default tier and effort per agent, plus per-task overrides (decision 65).
+# effort is how hard the model thinks: low | medium | high | xhigh | max. Left out, a
+# session runs at its model's own default (Opus 5.5 and Haiku 5.5: medium; Sonnet 5.5: high).
+# A task is used by naming it: `task:` on a schedule in schedules.yaml, or by the gateway
+# for its own sessions (Mira's review, check and triage; Mandla's large_change).
 # Ada's weekly evaluation proposes changes here as PRs (one per agent per week, max).
 agents:
   ada:
     default: deep
+    effort: low                                # check-ins, chat and follow-ups
+    tasks:
+      evaluation: { tier: deep, effort: medium }
   mira:
     default: standard
+    effort: medium                             # chat, tasks, merge proposals, lessons
     tasks:
-      triage: fast            # label, route, first-response acknowledgement
-      review: standard
-      check: deep             # fresh-session review check for PRs the gateway rates high risk (config/review.yaml)
+      triage: { tier: fast, effort: medium }   # label, route, first response; medium as it reads fork diffs before CI approval
+      review: { tier: standard, effort: high } # review passes, review wakes, review checks
+      check: { tier: deep, effort: high }      # review check for PRs the gateway rates high risk (config/review.yaml)
   vera:
     default: fast
+    effort: low                                # daily KPI refresh and scorecard
     tasks:
-      analysis: standard      # weekly scorecard narrative and anomaly reasoning
+      analysis: { tier: standard, effort: medium }  # weekly scorecard narrative and anomaly reasoning
   otto:
     default: standard
+    effort: medium
   mandla:
     default: standard
+    effort: high                               # code changes respond to effort
+    tasks:
+      large_change: { tier: deep, effort: high }   # tool, permission and owner-only changes
   rosa:
     default: standard
+    effort: medium
     tasks:
-      welcome: fast
+      welcome: { tier: fast, effort: low }
   juno:
     default: standard
+    effort: medium
   sage:
     default: standard
+    effort: medium
     tasks:
-      feed_filter: fast
+      feed_filter: { tier: fast, effort: low }
   kit:
     default: standard
+    effort: medium
     tasks:
-      threat_review: deep
+      threat_review: { tier: deep, effort: high }
   felix:
     default: standard
+    effort: high                               # builds and tests fixes, like Mandla
   nell:
     default: standard
+    effort: medium
