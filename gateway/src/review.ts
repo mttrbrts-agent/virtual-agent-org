@@ -33,7 +33,7 @@ export const SEVERITIES = ["blocking", "should-fix", "nit"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 export type { Risk } from "./risk";
 
-const FIRST_TIME = ["FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", "MANNEQUIN"];
+export const FIRST_TIME = ["FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", "MANNEQUIN"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 
 // ---- paths -----------------------------------------------------------------

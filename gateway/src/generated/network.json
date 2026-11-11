@@ -8,6 +8,20 @@
     "daily_wakes": 5,
     "budget_cents": 50
   },
+  "github_wakes": {
+    "review": {
+      "daily": 6,
+      "budget_cents": 100
+    },
+    "merge": {
+      "daily": 6,
+      "budget_cents": 50
+    },
+    "first_response": {
+      "daily": 10,
+      "budget_cents": 50
+    }
+  },
   "sandbox_repo": "accordproject/virtual-agent-org-sandbox",
   "network_repo": "accordproject/virtual-agent-org",
   "self_improvement": {

@@ -8,6 +8,7 @@ import { cap, type Ctx } from "./context";
 import type { Change, Decision, StartedBy } from "./db";
 import { ciSensitivePaths, executeDecision, inScope } from "./executors";
 import { parseTarget, type RepoRef } from "./github";
+import { ACTIVITY_DAYS, activityLine } from "./githubEvents";
 import { memberOf } from "./people";
 import {
   GATEWAY_LABEL, KIND_LABELS, checklist, ciApprovalRisks, failed, mergeCard, mergeChecks, parseFindings, prFacts, publicTextProblems, queueFrom, renderReview, reviewConfig, reviewLabels, type PrFacts, type ReviewFinding,
@@ -86,8 +87,22 @@ const HANDLERS: Record<ToolName, Handler> = {
     if (!inScope(ctx, ref)) throw new ToolError(`${repo} is not in the configured repos`);
     const name = `${ref.owner}/${ref.repo}`;
     const gh = await ctx.github();
-    const [pulls, reviewed] = await Promise.all([gh.openPulls(ref), ctx.db.reviewedHeads(name)]);
-    return JSON.stringify(queueFrom(name, pulls, reviewed));
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().replace("T", " ").slice(0, 19);
+    const [pulls, reviewed, events, woken] = await Promise.all([
+      gh.openPulls(ref),
+      ctx.db.reviewedHeads(name),
+      ctx.db.githubActivity(name, ago(ACTIVITY_DAYS)),
+      ctx.db.reviewWokenHeads(name, ago(1)),
+    ]);
+    // Decision 62: what moved on each PR lately, and whether a review wake started on its
+    // current head in the last day. Only that marks it as handled: a first response, an
+    // older head or a wake from days ago leaves it to the catch-up pass.
+    return JSON.stringify(
+      queueFrom(name, pulls, reviewed).map((p) => {
+        const activity = activityLine(events.filter((e) => e.target === p.target.toLowerCase()));
+        return { ...p, ...(activity ? { activity } : {}), ...(woken.has(`${p.target.toLowerCase()}@${p.sha}`) ? { review_woken_at_head: true } : {}) };
+      }),
+    );
   },
 
   review_findings: async (ctx, { input }) => {
@@ -334,7 +349,7 @@ async function readAudit(ctx: Ctx, input: Input): Promise<string> {
     notes: [
       "Spend is list cost in US cents from Managed Agents session usage, counted on the day each session started.",
       "Sessions from before token and model recording began show 0 tokens and model 'unknown'.",
-      "Decision statuses: open, approved (not yet run), executed, failed (approved but the action failed), rejected. Tool confirmations are excluded.",
+      "Decision statuses: open, approved (not yet run), executed, failed (approved but the action failed), rejected, lapsed (closed by the gateway because the PR or issue merged, closed or got new commits first; neither approved nor rejected). Tool confirmations are excluded.",
       "refusals: custom tool calls the gateway refused for bad input. Cite a refusal or denial as audit:<id>.",
       "Public actions run only through decisions: executed_actions lists them with their ids. Check tool_calls for any external tool that writes.",
       "changes: spec changes the gateway measured in this period, the days before going live against as many after (14, or more when tried again for too little data). overlaps names other changes to the same agent, or to the network, that went live within those windows.",

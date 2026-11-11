@@ -647,3 +647,61 @@ asks to revisit it), **OPEN**, **SUPERSEDED**.
   the reply with the original quoted.
 - Only the person a message was sent to can reply to it. A member's reply is marked as
   theirs and counts towards their daily allowance, as `/ada` does.
+
+**62. Hearing about changes on GitHub** · RESOLVED (amends 32)
+
+- Nothing listened to GitHub. Open decision cards went stale when a maintainer merged
+  or closed a PR or new commits landed, and Mira found PRs ready for review or merge
+  only at her next scheduled pass.
+- The gateway's GitHub App sends events to the gateway (`POST /github`). The gateway
+  updates its own records in plain code:
+  - it marks an open decision `lapsed`, with the reason on the card, when a person
+    merges or closes the PR or issue, or when a merge or CI approval's head gets new
+    commits. Only open decisions lapse: approved ones are already running, and
+    `lapsed` only closes a decision, so nothing is approved or run by an event;
+  - it re-runs an open merge card's checks when CI finishes or a review or thread
+    changes, and shows them on the card;
+  - it records review outcomes for PRs people merge or close;
+  - it shows each PR's recent activity in Mira's queue.
+- Events wake Mira, within daily caps per trigger (`budgets.github_wakes`) and only
+  while she is active and schedules are on: to review a PR when its CI goes green at a
+  head not yet reviewed, to propose a merge when every merge check passes at a
+  reviewed head (as a review check that skips the review), and to first-respond to a
+  first-time contributor. Each wake re-reads the PR before starting and is dropped if
+  it no longer applies. The review pass drops to once a day as a catch-up.
+- Once a day, from 05:30 local time, the gateway re-reads the open PRs and issues the
+  network tracks (open decisions, reviews with no outcome, pending wakes), since GitHub
+  doesn't retry failed deliveries. It never lists whole repos.
+- Events carry no rights (decision 33), the gateway stores no text from them, and it
+  ignores the network's own repo and any repo not in scope.
+- Not chosen: sessions subscribing to PRs and issues (sessions can only receive what
+  the gateway sends them, and would spend tokens waiting); polling as the main route.
+- Design: `docs/superpowers/specs/2026-11-11-github-events-design.md`.
+
+**63. Fixing failed CI** · RESOLVED (not built)
+
+- Felix joins Phase 1 for one job: fixing failed CI on PRs the network tracks (one
+  Mira has reviewed, or with an open decision or a pending wake). His release work, and
+  any watch on untracked PRs or the default branch, stay off.
+- Mira diagnoses a tracked PR's failed CI from its logs. She asks for a re-run when it
+  is flaky, comments to a person whose change broke it, and hands a bot's PR, or one
+  failing because the base branch is broken, to Felix through the gateway.
+- Felix builds and tests the fix in a sandbox with no write credentials, as Mandla
+  does, and requests `github.fix_pr`; the gateway applies it only after the owner
+  approves the card.
+- Not chosen: giving Mira a shell. Building runs the repo's and its dependencies' code,
+  and her sandbox holds a token that posts as the project.
+- Design: section 4a of the design in decision 62.
+
+**64. No advisor model** · RESOLVED
+
+- Managed Agents lets an agent on a cheaper model consult a stronger one mid-turn
+  (the "advisor"). Each consultation is billed at the stronger model's rates.
+- Off for every agent. On a standard-tier agent it only adds cost. It could save
+  money only by moving the deep-tier roles (Ada, Mira's review check) to a cheaper
+  model, and Opus 5.5 costs only twice what Sonnet 5.5 does, so the saving would be
+  small and fall on the roles where judgement matters most. The cheaper model also
+  decides for itself when to ask, and the advice comes back encrypted, so the audit
+  log can't show what it said.
+- Revisit if spend by agent shows the deep-tier roles taking most of the monthly
+  budget, after trying a lower effort level first.

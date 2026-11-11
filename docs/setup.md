@@ -54,7 +54,8 @@ Leave `DRY_RUN = "true"` in `wrangler.toml` until the Phase 0 gate passes.
 
 1. **Gateway app.** Create a GitHub App owned by your organisation, with repository
    permissions Contents, Pull requests, Issues and Actions (read and write) and
-   Metadata (read). No webhook. Generate a private key, convert it to PKCS#8
+   Metadata (read). Leave its webhook off for now; step 5 turns it on once the
+   gateway has a URL. Generate a private key, convert it to PKCS#8
    (`openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem`)
    and keep it **outside** the repo folder. Install the app on the sandbox repo and note
    the installation id.
@@ -87,6 +88,7 @@ npx wrangler secret put TELEGRAM_BOT_TOKEN
 | `ANTHROPIC_WEBHOOK_SECRET` | The `whsec_…` secret of the Console webhook below |
 | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID` | The gateway app from step 4 |
 | `GITHUB_APP_PRIVATE_KEY` | The PKCS#8 key: `npx wrangler secret put GITHUB_APP_PRIVATE_KEY < key-pkcs8.pem` |
+| `GITHUB_WEBHOOK_SECRET` | Optional: any random string; the gateway app's webhook secret below. Without it the gateway hears nothing from GitHub |
 | `DISCORD_APP_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN` | Optional: a Discord application with a bot, invited to your server |
 | `OWNER_DISCORD_ID` | Optional: your Discord user id |
 | `VIMEO_ACCESS_TOKEN` | Optional: a Vimeo token with public, private and edit scopes |
@@ -99,6 +101,12 @@ Then point each service at the gateway:
 - **Claude Console:** add a webhook to `https://<worker>/anthropic` for session events
   and for `deployment_run.failed` and `deployment.paused`; its signing secret is
   `ANTHROPIC_WEBHOOK_SECRET`.
+- **GitHub (optional, decision 62):** in the gateway app's settings, turn on the
+  webhook with URL `https://<worker>/github` and secret `GITHUB_WEBHOOK_SECRET`, and
+  subscribe to Pull request, Pull request review, Pull request review thread,
+  Workflow run, Issues and Issue comment. The app sends events for the repos it is
+  installed on; the gateway ignores any not in `github.repos`. Check the app's
+  Advanced tab shows the ping answered `pong`.
 - **Discord (optional):** in the Developer Portal set the Interactions Endpoint URL to
   `https://<worker>/discord`, then register the slash commands:
   `DISCORD_APP_ID=… DISCORD_BOT_TOKEN=… npm run discord:commands`. They work in your

@@ -71,7 +71,8 @@ agent's instructions. An agent is deployed only when its phase (in
 | Component | What it is | Where |
 | --- | --- | --- |
 | Agent runtime | One Claude Managed Agent per role, each with its own environment, tools, credential vault and memory store. Recurring work runs as scheduled deployments with a per-run budget. | `scripts/deploy.ts`, `config/schedules.yaml` |
-| Gateway | A Cloudflare Worker with a D1 database. Receives Telegram, Discord and Managed Agents webhooks, runs the agents' custom tools, holds the decision queue, executes approved actions and keeps an append-only audit log. | `gateway/src/` |
+| Gateway | A Cloudflare Worker with a D1 database. Receives Telegram, Discord, Managed Agents and GitHub webhooks, runs the agents' custom tools, holds the decision queue, executes approved actions and keeps an append-only audit log. | `gateway/src/` |
+| GitHub events | The gateway's App sends PR, review, CI and issue events. The gateway lapses decisions GitHub has moved past, refreshes merge cards, records review outcomes and queues Mira's wakes (decision 62). | `gateway/src/githubEvents.ts` |
 | Decision queue | A table in the gateway: id, agent, action kind, target, payload, risk, status. Cleared from approval cards in Telegram or Discord. | `gateway/src/agents.ts`, `controls.ts` |
 | Configuration | Phase, repos in scope, budgets, permissions, schedules, model tiers and people, compiled into `gateway/src/generated/network.json`. | `config/`, `scripts/compile.ts` |
 | Shared context | One read-only memory store with Accord context (`context/accord.md`), plus a read-write store per agent for its own notes. | `scripts/deploy.ts` |
@@ -216,6 +217,17 @@ public action without a decision id.
   posted or a merge is proposed (decision 22). The gateway computes each PR's facts
   and risk band, posts the confirmed findings, and records what maintainers did with
   them (decisions 35 and 36; settings in `config/review.yaml`).
+- **GitHub events** (decision 62): the gateway hears from its GitHub App when a PR or
+  issue in scope changes. In plain code it marks open decisions **lapsed** when a
+  person merges or closes their PR or issue, or a merge or CI approval's head gets new
+  commits; lapsing only ever closes a decision. It re-runs open merge cards' checks when
+  CI finishes or a review or thread changes, and records review outcomes. It wakes
+  Mira, within daily caps and only while she is active and schedules are on: to review
+  a PR when CI goes green at an unreviewed head, to propose a merge when every merge
+  check passes at a reviewed head, and to first-respond to a first-time contributor.
+  The review pass runs once a day to catch what wakes missed, and a daily check
+  re-reads the open PRs and issues the network tracks, since GitHub doesn't retry
+  failed deliveries. Events carry no rights, and the gateway keeps no text from them.
 - **Memory:** each agent keeps `/notes/working.md` in its own memory store; sessions
   start fresh and read their notes first.
 

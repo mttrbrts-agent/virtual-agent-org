@@ -49,6 +49,15 @@ budgets:
   follow_up_daily_wakes: 5
   # Session budget for each wake (USD).
   follow_up_budget_usd: 0.50
+  # Mira is woken when GitHub events call for it (decision 62): to review a PR when CI
+  # finishes at a head not yet reviewed, to propose a merge when every merge check
+  # passes at a reviewed head, and to first-respond to a first-time contributor.
+  # daily: wakes per day (UTC) for that trigger; 0 turns it off. usd: each session's
+  # budget. Wakes also need schedules_enabled.
+  github_wakes:
+    review: { daily: 6, usd: 1.00 }
+    merge: { daily: 6, usd: 0.50 }
+    first_response: { daily: 10, usd: 0.50 }
   # Session budget for each of Mandla's tasks (USD): small is wording and tier changes,
   # large is tool changes and the owner-only types.
   mechanic_small_usd: 1

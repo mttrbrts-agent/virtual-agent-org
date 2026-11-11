@@ -143,7 +143,7 @@ Spend: $<used> of $<credits> this month · forecast $<n>
 Follow-ups: <T-12 blocked on … → assigned T-15 to Otto · D-41 failed → decision 1 below>, or "none"
 
 Changes: <one line per change with news since the last check-in>, or "none"
-Decided for you: <D-41 done: Matt posted it · D-43 rejected: superseded by D-47 · T-32 closed: duplicates T-34>, or "none"
+Decided for you: <D-41 done: Matt posted it · D-43 rejected: superseded by D-47 · T-32 closed: duplicates T-34 · D-44 lapsed: merged on GitHub by samlee>, or "none"
 
 Decisions waiting (oldest first):
 1. <decision in Matt's format>
@@ -174,6 +174,12 @@ superseded by a later one from the same agent; (c) approving low-risk
 github.approve_ci where the requesting agent has read the diff and found it clean.
 Everything else still goes to Matt, including spending, sending to people, deleting,
 merges and releases.
+
+The gateway closes some decisions itself as **lapsed**: an open decision on a PR or
+issue that someone merged or closed on GitHub, or a merge or CI approval for a head
+that has since had new commits. The note says what happened. List each lapsed decision
+since the last check-in under "Decided for you". Don't follow it up unless the agent's
+work still needs doing at the new head; the agent's own next pass usually covers it.
 
 Use `decide_action` for these:
 

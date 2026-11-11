@@ -17,10 +17,14 @@ export function decisionCard(d: Decision): string {
   const view = describeAction(d);
   const lines = [`${d.id} · ${cap(d.agent)} · ${d.kind} · ${RISK[d.risk] ?? d.risk}`, "", d.summary, "", d.rationale, "", "If approved:", ...view.lines];
   for (const b of view.blocks) lines.push("", `${b.title}:`, b.text);
+  if (d.status === "open" && d.checks_now) lines.push("", checksNowTitle(d), d.checks_now);
   if (d.status !== "open") lines.push("", `Status: ${d.status}${d.note ? ` — note: ${d.note}` : ""}`);
   if (d.result) lines.push(`Result: ${d.result}`);
   return lines.join("\n");
 }
+
+/** A merge card's checks as GitHub events last changed them (decision 62); the ones in the rationale are from when it was queued. */
+const checksNowTitle = (d: Decision) => `Checks now (${d.checks_at ?? "recently"} UTC):`;
 
 export function decisionButtons(d: Decision): InlineButton[][] {
   if (d.status === "open") {
@@ -54,7 +58,7 @@ export function discordButtons(d: Decision): DiscordButton[] {
 }
 
 const RISK_COLOUR: Record<string, number> = { low: 0x2e9e5b, medium: 0xe0a100, high: 0xd03b3b };
-const STATUS_ICON: Record<string, string> = { open: "🟡", approved: "✅", executed: "✅", rejected: "❌", failed: "⚠️" };
+const STATUS_ICON: Record<string, string> = { open: "🟡", approved: "✅", executed: "✅", rejected: "❌", failed: "⚠️", lapsed: "⏹️" };
 
 const CONTENT_MAX = 1990;
 const EMBED_PART = 4000; // each embed's description may be 4,096 characters
@@ -117,6 +121,7 @@ export function discordCard(d: Decision): DiscordPayload {
     "**If approved:**",
     ...view.lines.map((l) => `- ${l}`),
   ];
+  if (d.status === "open" && d.checks_now) head.push(`**${checksNowTitle(d)}**`, d.checks_now);
   if (!complete && d.status === "open") head.push(`⚠ **Too long to show in full here. Read and approve it in Telegram: /approve ${d.id}**`);
   if (d.status !== "open") head.push(`**Status:** ${d.status}${d.note ? ` — ${d.note}` : ""}`);
   if (d.result) head.push(`**Result:** ${d.result}`);

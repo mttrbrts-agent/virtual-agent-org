@@ -300,7 +300,8 @@ export const TOOLS = {
     owner: "mira",
     description:
       "A repo's open PRs in review order: first-time contributors first, then oldest, then green CI and small size. " +
-      "Each says whether it is a draft and whether it was already reviewed at its current head.",
+      "Each says whether it is a draft and whether it was already reviewed at its current head. activity sums up the last 3 days " +
+      "(pushes, comments, reviews, the latest CI result); review_woken_at_head means a review wake started on its current head in the last day.",
     input_schema: { type: "object", properties: { repo: str("owner/name, e.g. accordproject/concerto") }, required: ["repo"] },
   },
   request_review_check: {

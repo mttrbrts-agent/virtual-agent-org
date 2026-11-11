@@ -76,7 +76,7 @@ Matt writes British English. Keep messages plain and short.
 | `context/accord.md` | Shared read-only context, written to the shared memory store |
 | `scripts/compile.ts` | Validates config and writes `gateway/src/generated/network.json` |
 | `scripts/deploy.ts` | Creates or updates agents, vaults, memory stores and deployments; writes `deployed.json` |
-| `gateway/src/` | The Worker: `index.ts` routes, `tools.ts` custom tools (defined in `toolDefs.ts`, input checked by `schema.ts`), `actions.ts` one spec per action kind (check, card, run), `executors.ts` dispatch, `review.ts` PR facts, risk and merge checks, `workflows.ts` workflow safety, `risk.ts` risk levels, `agents.ts` sessions and cards, `sessions.ts` event processing and housekeeping, `followUp.ts` waking Ada about blocked tasks and failed decisions, `changes.ts` the self-improvement loop's changes (proposal checks, Mandla's tasks, `submit_change`, measuring) |
+| `gateway/src/` | The Worker: `index.ts` routes, `tools.ts` custom tools (defined in `toolDefs.ts`, input checked by `schema.ts`), `actions.ts` one spec per action kind (check, card, run), `executors.ts` dispatch, `review.ts` PR facts, risk and merge checks, `workflows.ts` workflow safety, `risk.ts` risk levels, `agents.ts` sessions and cards, `sessions.ts` event processing and housekeeping, `followUp.ts` waking Ada about blocked tasks and failed decisions, `githubEvents.ts` GitHub events (lapsing decisions, merge card refreshes, Mira's wakes, the daily check), `changes.ts` the self-improvement loop's changes (proposal checks, Mandla's tasks, `submit_change`, measuring) |
 | `gateway/test/` | vitest suite with an in-memory D1 and fakes for every external API |
 
 ## Commands
@@ -116,7 +116,7 @@ only for a fork without the workflow, or when a run fails.
 ## Conventions
 
 - **Tests.** Every behaviour change gets a test in the matching `gateway/test/<area>.test.ts`
-  (actions, changes, channels, decisions, edge, review, sessions, tools, vimeo), using
+  (actions, changes, channels, decisions, edge, github, review, sessions, tools, vimeo), using
   `makeTestCtx()` from `helpers.ts`. Fakes record calls; never hit real APIs in
   tests.
 - **Fetch binding.** Workers reject `fetch` called with the wrong `this`, so every
@@ -156,7 +156,12 @@ only for a fork without the workflow, or when a run fails.
   - the PR GraphQL query, including `latestOpinionatedReviews`, and the fallback when
     GitHub refuses a review's inline comments (`github.ts`, `actions.ts`);
   - the GraphQL read of `HEAD:.github/workflows` behind automatic CI approval
-    (`workflowFiles` in `github.ts`, decision 45).
+    (`workflowFiles` in `github.ts`, decision 45);
+  - GitHub webhook payloads (`normalise` in `githubEvents.ts`, decision 62): that a
+    fork PR's `workflow_run` names no PR, so the gateway matches its head against
+    the open PRs, and the `pull_request_review_thread` event's shape.
+- **GitHub webhook** (decision 62) is built but off until the gateway's App has its
+  webhook URL and `GITHUB_WEBHOOK_SECRET` is set (`docs/setup.md`, step 5).
 - **GitHub App permissions** the gateway now needs: Contents, Pull requests and
   Actions, all read and write.
 - **Decision 10** (open): long-term funding for the API credits.

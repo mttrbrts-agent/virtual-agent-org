@@ -5,9 +5,10 @@ import { handleInteraction, type Interaction } from "./discordInteractions";
 import { makeCtx } from "./context";
 import { Db } from "./db";
 import { checkEnv, type Env } from "./env";
+import { applyEvent, dailyCheck, dispatchWakes, normalise } from "./githubEvents";
 import { housekeeping, processSession, sweep } from "./sessions";
 import type { TgUpdate } from "./telegram";
-import { timingSafeEqual, verifyWebhook } from "./webhookVerify";
+import { timingSafeEqual, verifyGitHub, verifyWebhook } from "./webhookVerify";
 
 interface WebhookPayload {
   type: string;
@@ -75,6 +76,27 @@ export default {
       return new Response("ok");
     }
 
+    if (req.method === "POST" && url.pathname === "/github") {
+      // Decision 62: the gateway's App sends events for the repos it is installed on.
+      if (!env.GITHUB_WEBHOOK_SECRET) return new Response("not found", { status: 404 });
+      const raw = await req.text();
+      if (!(await verifyGitHub(env.GITHUB_WEBHOOK_SECRET, req.headers.get("x-hub-signature-256"), raw))) {
+        return new Response("bad signature", { status: 401 });
+      }
+      const name = req.headers.get("x-github-event") ?? "";
+      const delivery = req.headers.get("x-github-delivery") ?? "";
+      if (name === "ping") return new Response("pong");
+      const ctx = makeCtx(env);
+      if (!delivery || !(await ctx.db.claimEvent(`gh:${delivery}`))) return new Response("duplicate");
+      // GitHub gives up after 10 seconds: answer now, do the work after.
+      exec.waitUntil(
+        (async () => {
+          for (const n of await normalise(ctx, name, delivery, JSON.parse(raw))) await applyEvent(ctx, n);
+        })().catch((e) => ctx.db.audit({ event_type: "gateway.github_webhook_error", detail: { event: name, delivery, error: String(e) } })),
+      );
+      return new Response("ok");
+    }
+
     return new Response("not found", { status: 404 });
   },
 
@@ -90,6 +112,11 @@ export default {
         await housekeeping(ctx).catch((e) => ctx.db.audit({ event_type: "gateway.housekeeping_error", detail: String(e) }));
         await tickChanges(ctx);
         await sweep(ctx);
+        // Decision 62 is opt-in: without the webhook secret the gateway neither polls GitHub nor wakes anyone.
+        if (env.GITHUB_WEBHOOK_SECRET) {
+          await dailyCheck(ctx).catch((e) => ctx.db.audit({ event_type: "gateway.github_daily_check_error", detail: String(e) }));
+          await dispatchWakes(ctx);
+        }
       })(),
     );
   },

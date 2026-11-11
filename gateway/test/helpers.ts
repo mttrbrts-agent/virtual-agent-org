@@ -165,7 +165,11 @@ export function fakeGitHub(pr: Partial<FakePr> = {}) {
       return p.workflows;
     },
     runsAt: async () => (p.runs ? p.runs.map((r) => ({ name: `wf${r.workflow_id}`, ...r })) : null),
-    openPulls: async () => [],
+    /** Open PRs as the queue lists them; tests set it to match a fork's workflow run. */
+    openPullsList: [] as { number: number; headRefOid: string }[],
+    openPulls: async () => gh.openPullsList,
+    issueState: async () => ({ state: p.state === "OPEN" ? "open" : p.state === "MERGED" ? "merged" : "closed", pr: true }),
+    pull: async () => ({ head: { sha: p.head, repo: null }, base: { repo: { full_name: "accordproject/concerto" } }, state: p.state === "OPEN" ? "open" : "closed" }),
     createReview: async (_r: unknown, review: (typeof posted)[number]) => {
       if (gh.rejectInline && review.comments.length) throw new Error("GitHub POST /reviews: 422 Line could not be resolved");
       posted.push(review);
