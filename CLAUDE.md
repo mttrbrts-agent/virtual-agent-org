@@ -150,8 +150,6 @@ only for a fork without the workflow, or when a run fails.
   - the `unrestricted` networking body for Sage's open environment (`ensureEnvironment`
     in `deploy.ts`, decision 54);
   - events-list pagination (`managed.ts`);
-  - the token field names on a session's `usage` (`sessionTokens` in `managed.ts`),
-    behind Vera's `read_audit`;
   - the Vimeo texttrack `link` field (`vimeo.ts`);
   - the PR GraphQL query, including `latestOpinionatedReviews`, and the fallback when
     GitHub refuses a review's inline comments (`github.ts`, `actions.ts`);

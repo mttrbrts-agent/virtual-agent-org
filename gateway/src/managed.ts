@@ -24,12 +24,14 @@ export interface Session {
   status: "idle" | "running" | "rescheduling" | "terminated";
   agent?: { id: string; version?: number } | string;
   stop_reason?: { type: string; event_ids?: string[] };
-  // VERIFY: token field names, assumed to match span.model_request_end's model_usage.
+  // Checked against the live API: a session reports cache writes as
+  // `cache_creation`, split by cache lifetime, not as `cache_creation_input_tokens`.
   usage?: {
     list_cost?: { amount: string; currency: string };
     input_tokens?: number;
     output_tokens?: number;
     cache_read_input_tokens?: number;
+    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
     cache_creation_input_tokens?: number;
   };
   metadata?: Record<string, string>;
@@ -240,7 +242,10 @@ export function sessionTokens(s: Session): Tokens {
     input_tokens: n(s.usage?.input_tokens),
     output_tokens: n(s.usage?.output_tokens),
     cache_read_tokens: n(s.usage?.cache_read_input_tokens),
-    cache_write_tokens: n(s.usage?.cache_creation_input_tokens),
+    // The flat field is what model requests report; keep it as a fallback.
+    cache_write_tokens:
+      n(s.usage?.cache_creation_input_tokens) ||
+      n(s.usage?.cache_creation?.ephemeral_5m_input_tokens) + n(s.usage?.cache_creation?.ephemeral_1h_input_tokens),
   };
 }
 
