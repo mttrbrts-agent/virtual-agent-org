@@ -8,6 +8,20 @@
     "daily_wakes": 5,
     "budget_cents": 50
   },
+  "github_wakes": {
+    "review": {
+      "daily": 6,
+      "budget_cents": 100
+    },
+    "merge": {
+      "daily": 6,
+      "budget_cents": 50
+    },
+    "first_response": {
+      "daily": 10,
+      "budget_cents": 50
+    }
+  },
   "sandbox_repo": "accordproject/virtual-agent-org-sandbox",
   "network_repo": "accordproject/virtual-agent-org",
   "self_improvement": {
@@ -29,7 +43,8 @@
     "accordproject/concerto",
     "accordproject/template-engine",
     "accordproject/template-playground",
-    "accordproject/concerto-codegen"
+    "accordproject/concerto-codegen",
+    "accordproject/apap"
   ],
   "action_kinds": {
     "github.merge": {

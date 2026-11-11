@@ -17,10 +17,14 @@ export function decisionCard(d: Decision): string {
   const view = describeAction(d);
   const lines = [`${d.id} · ${cap(d.agent)} · ${d.kind} · ${RISK[d.risk] ?? d.risk}`, "", d.summary, "", d.rationale, "", "If approved:", ...view.lines];
   for (const b of view.blocks) lines.push("", `${b.title}:`, b.text);
+  if (d.status === "open" && d.checks_now) lines.push("", checksNowTitle(d), d.checks_now);
   if (d.status !== "open") lines.push("", `Status: ${d.status}${d.note ? ` — note: ${d.note}` : ""}`);
   if (d.result) lines.push(`Result: ${d.result}`);
   return lines.join("\n");
 }
+
+/** A merge card's checks as GitHub events last changed them (decision 62); the ones in the rationale are from when it was queued. */
+const checksNowTitle = (d: Decision) => `Checks now (${d.checks_at ?? "recently"} UTC):`;
 
 export function decisionButtons(d: Decision): InlineButton[][] {
   if (d.status === "open") {
@@ -54,17 +58,25 @@ export function discordButtons(d: Decision): DiscordButton[] {
 }
 
 const RISK_COLOUR: Record<string, number> = { low: 0x2e9e5b, medium: 0xe0a100, high: 0xd03b3b };
-const STATUS_ICON: Record<string, string> = { open: "🟡", approved: "✅", executed: "✅", rejected: "❌", failed: "⚠️" };
+const STATUS_ICON: Record<string, string> = { open: "🟡", approved: "✅", executed: "✅", rejected: "❌", failed: "⚠️", lapsed: "⏹️" };
 
 const CONTENT_MAX = 1990;
 const EMBED_PART = 4000; // each embed's description may be 4,096 characters
 const EMBED_BUDGET = 5900; // and 6,000 across a message's embeds, titles included
 
+/**
+ * A merge card carries the whole case for the merge (C-6), so on Discord its
+ * rationale goes in an embed, where it either fits or the card loses its Approve button,
+ * rather than being cut silently to fit the message.
+ */
+const rationaleInEmbed = (d: Decision) => d.kind === "github.merge";
+
 /** A card's long text as Discord embeds, and whether all of it fitted. */
 function embedsFor(d: Decision): { embeds: DiscordEmbed[]; complete: boolean } {
   const embeds: DiscordEmbed[] = [];
   let budget = EMBED_BUDGET;
-  for (const block of describeAction(d).blocks) {
+  const blocks = describeAction(d).blocks;
+  for (const block of rationaleInEmbed(d) ? [{ title: "Why, and what the gateway found", text: d.rationale }, ...blocks] : blocks) {
     for (const [i, part] of splitText(block.text || "(empty)", EMBED_PART).entries()) {
       const title = i === 0 ? block.title.slice(0, 256) : undefined;
       const room = budget - (title?.length ?? 0);
@@ -105,10 +117,11 @@ export function discordCard(d: Decision): DiscordPayload {
   const head = [
     `${STATUS_ICON[d.status] ?? "•"} **${d.id} · ${cap(d.agent)} · ${d.kind}** · ${RISK[d.risk] ?? d.risk}`,
     `**${d.summary}**`,
-    d.rationale,
+    rationaleInEmbed(d) ? "The change, the discussion and the checks are below." : d.rationale,
     "**If approved:**",
     ...view.lines.map((l) => `- ${l}`),
   ];
+  if (d.status === "open" && d.checks_now) head.push(`**${checksNowTitle(d)}**`, d.checks_now);
   if (!complete && d.status === "open") head.push(`⚠ **Too long to show in full here. Read and approve it in Telegram: /approve ${d.id}**`);
   if (d.status !== "open") head.push(`**Status:** ${d.status}${d.note ? ` — ${d.note}` : ""}`);
   if (d.result) head.push(`**Result:** ${d.result}`);
@@ -117,7 +130,7 @@ export function discordCard(d: Decision): DiscordPayload {
   if (content.length > CONTENT_MAX) {
     // Shorten the rationale, never the decision line, what approval does, or the status.
     const over = content.length - CONTENT_MAX + 2;
-    head[2] = `${d.rationale.slice(0, Math.max(0, d.rationale.length - over))}…`;
+    head[2] = `${head[2].slice(0, Math.max(0, head[2].length - over))}…`;
     content = head.join("\n");
   }
   const buttons = discordButtons(d).filter((b) => complete || !b.custom_id.startsWith("a:"));

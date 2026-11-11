@@ -1,6 +1,7 @@
 // Telegram update handling: who is speaking, what they may do, and routing.
 
 import { agentFromText, failureText, messageAgent, postDecision, replyToAgentMessage } from "./agents";
+import { decisionButtons, decisionCard } from "./format";
 import type { SentMessage } from "./db";
 import { cap, type Ctx } from "./context";
 import { approve, askAda, markDone, pause, reject, resume, revoke, stop } from "./controls";
@@ -61,6 +62,22 @@ async function handleCallback(ctx: Ctx, q: NonNullable<TgUpdate["callback_query"
       break;
   }
   await ctx.tg.answerCallback(q.id, reply.slice(0, 190));
+  await refreshPressedCard(ctx, q.message, id);
+}
+
+/**
+ * A card re-sent with send_to_matt (C-4) isn't the one the decision records, so the
+ * decision's refresh updates only the original: update the one pressed as well.
+ */
+async function refreshPressedCard(ctx: Ctx, m: TgMessage | undefined, id: string | undefined) {
+  if (!m || !id) return;
+  const d = await ctx.db.getDecision(id);
+  if (!d || d.tg_message_id === m.message_id) return;
+  try {
+    await ctx.tg.edit(m.chat.id, m.message_id, decisionCard(d), decisionButtons(d));
+  } catch {
+    // Too old to edit or unchanged; the decision record is authoritative.
+  }
 }
 
 async function handleMessage(ctx: Ctx, m: TgMessage) {

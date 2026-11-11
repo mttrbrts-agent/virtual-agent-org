@@ -103,6 +103,13 @@ export class GitHub {
     );
   }
 
+  /** Whether a PR or issue is open, closed or merged, and which it is; the issues endpoint answers for both. */
+  async issueState(r: Required<RepoRef>): Promise<{ state: "open" | "closed" | "merged"; pr: boolean }> {
+    const i = await this.call<{ state: string; pull_request?: { merged_at: string | null } }>("GET", `/repos/${r.owner}/${r.repo}/issues/${r.number}`);
+    const state = i.state === "open" ? "open" : i.pull_request?.merged_at ? "merged" : "closed";
+    return { state, pr: !!i.pull_request };
+  }
+
   async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     const r = await this.call<{ data?: T; errors?: { message: string }[] }>("POST", "/graphql", { query, variables });
     if (r.errors?.length || !r.data) throw new Error(`GitHub GraphQL: ${r.errors?.map((e) => e.message).join("; ") ?? "no data"}`);

@@ -15,6 +15,8 @@ export interface Env {
   GITHUB_APP_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string; // PKCS#8 PEM
   GITHUB_INSTALLATION_ID?: string;
+  // The App's webhook secret (decision 62). Without it the /github endpoint is off.
+  GITHUB_WEBHOOK_SECRET?: string;
 
   // Vimeo personal access token for the Accord Project account (decision 18A):
   // scopes public, private, edit. Held only by the gateway.

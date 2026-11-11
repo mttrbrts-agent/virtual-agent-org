@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { approve } from "../src/controls";
+import { decisionCard, discordCard, discordCardFits } from "../src/format";
 import { parseTarget } from "../src/github";
 import { splitText } from "../src/telegram";
 import { handleTool } from "../src/tools";
@@ -323,16 +324,25 @@ describe("merge checks (decision 35)", () => {
     expect(fakes.sent.filter((m) => m.text.includes("github.merge"))).toHaveLength(0);
   });
 
-  it("needs a maintainer's approval unless the PR is low risk", async () => {
+  it("needs a maintainer's approval on GitHub only when the PR is high risk (C-6)", async () => {
+    const big = setup({ reviews: [], additions: 300, deletions: 200 });
+    await expect(merge(big.ctx, await reviewed(big.ctx, big.fakes))).rejects.toThrow(/✗ maintainer approval: none yet; a high-risk PR needs one/);
+
+    const workflow = setup({ reviews: [], files: ["src/parser.ts", ".github/workflows/ci.yml"] });
+    await expect(merge(workflow.ctx, await reviewed(workflow.ctx, workflow.fakes))).rejects.toThrow(/✗ maintainer approval: none yet; a high-risk PR needs one/);
+
     const code = setup({ reviews: [] });
-    await expect(merge(code.ctx, await reviewed(code.ctx, code.fakes))).rejects.toThrow(/✗ maintainer approval: none yet; a medium-risk PR needs one/);
+    expect(await merge(code.ctx, await reviewed(code.ctx, code.fakes))).toMatch(/Queued as D-2/);
+    const d = (await code.ctx.db.getDecision("D-2"))!;
+    expect(d.risk).toBe("medium");
+    expect(d.rationale).toContain("✓ maintainer approval: none on GitHub; for a medium-risk PR, Matt's approval of this card stands in for it");
 
     const docs = setup({ reviews: [], files: ["README.md", "docs/intro.md"], additions: 12, deletions: 3 });
     expect(await merge(docs.ctx, await reviewed(docs.ctx, docs.fakes))).toMatch(/Queued as D-2/);
     expect((await docs.ctx.db.getDecision("D-2"))!.rationale).toContain("✓ maintainer approval: not needed for a low-risk PR");
 
-    const self = setup({ reviews: [{ login: "contrib", state: "APPROVED" }] }); // the author's own approval doesn't count
-    await expect(merge(self.ctx, await reviewed(self.ctx, self.fakes))).rejects.toThrow(/✗ maintainer approval/);
+    const self = setup({ reviews: [{ login: "contrib", state: "APPROVED" }], additions: 300, deletions: 200 }); // the author's own approval doesn't count
+    await expect(merge(self.ctx, await reviewed(self.ctx, self.fakes))).rejects.toThrow(/✗ maintainer approval: none yet; a high-risk PR needs one/);
   });
 
   it.each([
@@ -363,6 +373,65 @@ describe("merge checks (decision 35)", () => {
     expect(await approve(ctx, "D-2")).toMatch(/Not merged; the PR changed since the proposal:\n✗ reviewed head: head is 9999999, reviewed abcdef1/);
     expect(gh.merged).toEqual([]);
     expect((await ctx.db.getDecision("D-2"))?.status).toBe("failed");
+  });
+
+  it.each([
+    ["CI fails", (gh: any) => (gh.pr.runs = [{ id: 2, workflow_id: 10, event: "pull_request", status: "completed", conclusion: "failure" }]), /✗ CI green: CI is failure/],
+    ["a conflict appears", (gh: any) => (gh.pr.mergeable = "CONFLICTING"), /✗ mergeable: mergeable is CONFLICTING/],
+    ["a thread is opened", (gh: any) => (gh.pr.unresolved = 1), /✗ threads resolved: 1 unresolved/],
+    ["the head moves", (gh: any) => (gh.pr.head = "9999999999999999999999999999999999999999"), /✗ reviewed head: head is 9999999, reviewed abcdef1/],
+  ])("refuses a medium-risk merge without a GitHub approval at approval time when %s", async (_why, change, why) => {
+    const { ctx, fakes, gh } = setup({ reviews: [] });
+    expect(await merge(ctx, await reviewed(ctx, fakes))).toMatch(/Queued as D-2/);
+    change(gh);
+    const out = await approve(ctx, "D-2");
+    expect(out).toMatch(/Not merged; the PR changed since the proposal/);
+    expect(out).toMatch(why);
+    expect(gh.merged).toEqual([]);
+    expect((await ctx.db.getDecision("D-2"))?.status).toBe("failed");
+  });
+
+  it("merges a medium-risk PR without a GitHub approval once Matt approves the card, if every check still passes", async () => {
+    const { ctx, fakes, gh } = setup({ reviews: [] });
+    expect(await merge(ctx, await reviewed(ctx, fakes))).toMatch(/Queued as D-2/);
+    expect(await approve(ctx, "D-2")).toBe("D-2: Merged as feedfac");
+    expect(gh.merged).toEqual([{ method: "squash", sha: HEAD }]);
+  });
+
+  it("puts the change, Mira's findings, the CI runs and the links on the merge card (C-6)", async () => {
+    const { ctx, fakes } = setup({ files: ["src/parser.ts", "test/parser.test.ts"], additions: 30, deletions: 10 });
+    const sid = await reviewed(ctx, fakes, [
+      { path: "src/parser.ts", line: 10, severity: "nit", area: "conventions", summary: "Name the constant." },
+      { path: "src/parser.ts", line: 12, severity: "should-fix", area: "tests", summary: "Add a test for empty input." },
+    ]);
+    expect(await merge(ctx, sid)).toMatch(/Queued as D-2/);
+    const d = (await ctx.db.getDecision("D-2"))!;
+    expect(d.rationale).toMatch(/^Verified the fix\.\n\nThe change at abcdef1: /);
+    expect(d.rationale).toContain("- 2 files, +30 −10 lines: src/parser.ts, test/parser.test.ts");
+    expect(d.rationale).toContain("- PR: https://github.com/accordproject/concerto/pull/12\n- Diff: https://github.com/accordproject/concerto/pull/12/files");
+    expect(d.rationale).toMatch(/Mira's review R-1 \(D-1\) at abcdef1: 2 findings, https:\/\/github\.com\/\S+/);
+    // Most severe first.
+    expect(d.rationale).toContain("- should-fix · tests · src/parser.ts:12: Add a test for empty input.\n- nit · conventions · src/parser.ts:10: Name the constant.");
+    expect(d.rationale).toContain("CI at abcdef1: success\n- wf10 #1: success");
+    expect(d.rationale.indexOf("CI at abcdef1")).toBeLessThan(d.rationale.indexOf("Gateway checks at abcdef1"));
+    expect(decisionCard(d)).toContain("- Diff: https://github.com/accordproject/concerto/pull/12/files");
+  });
+
+  it("shows a merge card's whole rationale on Discord in an embed, never cut silently", async () => {
+    const { ctx, fakes } = setup({ reviews: [] });
+    const sid = await reviewed(ctx, fakes);
+    await merge(ctx, sid);
+    const d = (await ctx.db.getDecision("D-2"))!;
+    const card = discordCard(d);
+    expect(card.content).not.toContain("Gateway checks at");
+    expect(card.embeds![0]).toMatchObject({ title: "Why, and what the gateway found", description: d.rationale });
+    expect(discordCardFits(d)).toBe(true);
+    expect(card.buttons!.map((b) => b.label)).toEqual(["Approve", "Reject", "Ask Ada"]);
+
+    const long = { ...d, rationale: `${"A long account of the discussion. ".repeat(250)}\n\n${d.rationale}` };
+    expect(discordCardFits(long)).toBe(false);
+    expect(discordCard(long).buttons!.map((b) => b.label)).toEqual(["Reject", "Ask Ada"]);
+    expect(decisionCard(long)).toContain("Gateway checks at abcdef1");
   });
 
   it("applies the checks even when the review-check rule is off", async () => {

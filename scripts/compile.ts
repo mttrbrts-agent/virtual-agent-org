@@ -24,6 +24,8 @@ export function fullRepo(repo: string, org: string): string {
 
 /** Kinds the gateway runs without the owner, after its own checks (decisions 20 and 36). */
 export const AUTO_KINDS = ["github.approve_ci", "github.review"];
+/** What GitHub events may wake Mira for (decision 62). */
+export const GITHUB_WAKES = ["review", "merge", "first_response"] as const;
 const TONES = ["welcoming", "neutral", "terse"];
 
 export function validateReview(r: ReviewYaml | undefined): string[] {
@@ -84,6 +86,11 @@ export function validate(cfg = loadAll()): string[] {
   if (wakes !== undefined && !(Number.isInteger(wakes) && wakes >= 0 && wakes <= 50)) errs.push("network.yaml: budgets.follow_up_daily_wakes must be a whole number from 0 to 50");
   const wakeUsd = network.budgets.follow_up_budget_usd;
   if (wakeUsd !== undefined && !(typeof wakeUsd === "number" && wakeUsd > 0 && wakeUsd <= 3)) errs.push("network.yaml: budgets.follow_up_budget_usd must be more than 0 and at most 3");
+  for (const [trigger, w] of Object.entries(network.budgets.github_wakes ?? {})) {
+    if (!(GITHUB_WAKES as readonly string[]).includes(trigger)) errs.push(`network.yaml: budgets.github_wakes.${trigger}: unknown trigger; use ${GITHUB_WAKES.join(", ")}`);
+    else if (!(Number.isInteger(w?.daily) && w.daily >= 0 && w.daily <= 50)) errs.push(`network.yaml: budgets.github_wakes.${trigger}.daily must be a whole number from 0 to 50`);
+    else if (!(typeof w.usd === "number" && w.usd > 0 && w.usd <= 3)) errs.push(`network.yaml: budgets.github_wakes.${trigger}.usd must be more than 0 and at most 3`);
+  }
 
   const own = network.github.network_repo;
   if (!REPO_RE.test(String(own))) errs.push(`github.network_repo: "${own}" should be owner/name`);
@@ -230,6 +237,9 @@ export function compile(cfg = loadAll()) {
       daily_wakes: network.budgets.follow_up_daily_wakes ?? 5,
       budget_cents: Math.round((network.budgets.follow_up_budget_usd ?? 0.5) * 100),
     },
+    github_wakes: Object.fromEntries(
+      Object.entries(network.budgets.github_wakes ?? {}).map(([trigger, w]) => [trigger, { daily: w.daily, budget_cents: Math.round(w.usd * 100) }]),
+    ),
     sandbox_repo: network.github.sandbox_repo,
     network_repo: network.github.network_repo,
     self_improvement: {

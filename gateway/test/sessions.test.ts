@@ -50,7 +50,7 @@ describe("session processing", () => {
 
   it("records a scheduled session's tokens and default model, and never lowers them", async () => {
     const { ctx, fakes } = makeTestCtx();
-    const usage = { list_cost: { amount: "42", currency: "USD" }, input_tokens: 1200, output_tokens: 300, cache_read_input_tokens: 9000, cache_creation_input_tokens: 50 };
+    const usage = { list_cost: { amount: "42", currency: "USD" }, input_tokens: 1200, output_tokens: 300, cache_read_input_tokens: 9000, cache_creation: { ephemeral_5m_input_tokens: 40, ephemeral_1h_input_tokens: 10 } };
     fakes.sessions.s4 = { id: "s4", status: "running", agent: { id: "agent_mira" }, usage };
     await processSession(ctx, "s4");
     expect(await ctx.db.getSession("s4")).toMatchObject({
@@ -59,6 +59,14 @@ describe("session processing", () => {
     fakes.sessions.s4 = { id: "s4", status: "idle", agent: { id: "agent_mira" }, stop_reason: { type: "end_turn" }, usage: { input_tokens: 10 } };
     await processSession(ctx, "s4");
     expect(await ctx.db.getSession("s4")).toMatchObject({ cost_cents: 42, input_tokens: 1200, status: "idle:end_turn" });
+  });
+
+  it("reads cache writes from either usage shape", async () => {
+    const { sessionTokens } = await import("../src/managed");
+    const base = { id: "s", status: "idle" as const };
+    expect(sessionTokens({ ...base, usage: { cache_creation: { ephemeral_5m_input_tokens: 68773, ephemeral_1h_input_tokens: 0 } } }).cache_write_tokens).toBe(68773);
+    expect(sessionTokens({ ...base, usage: { cache_creation_input_tokens: 50 } }).cache_write_tokens).toBe(50);
+    expect(sessionTokens({ ...base, usage: {} }).cache_write_tokens).toBe(0);
   });
 });
 

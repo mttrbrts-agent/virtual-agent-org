@@ -5,7 +5,7 @@
 import type { ReviewConfig } from "./config";
 import type { Risk } from "./risk";
 import type { Ctx } from "./context";
-import type { Review } from "./db";
+import type { Finding, Review } from "./db";
 import type { GitHub, OpenPull, PrDetail, RepoRef, WorkflowRun } from "./github";
 import { workflowRisks, workflowWarnings } from "./workflows";
 
@@ -33,7 +33,7 @@ export const SEVERITIES = ["blocking", "should-fix", "nit"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 export type { Risk } from "./risk";
 
-const FIRST_TIME = ["FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", "MANNEQUIN"];
+export const FIRST_TIME = ["FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", "MANNEQUIN"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 
 // ---- paths -----------------------------------------------------------------
@@ -137,12 +137,7 @@ export type CiState = "success" | "pending" | "waiting" | "failure" | "none" | "
  */
 export function ciState(rollup: string | null | undefined, runs: WorkflowRun[] | null): CiState {
   if (runs === null) return "unknown";
-  const latest = new Map<string, WorkflowRun>();
-  for (const r of runs) {
-    const key = `${r.workflow_id}:${r.event}`;
-    if (!latest.has(key) || latest.get(key)!.id < r.id) latest.set(key, r);
-  }
-  const current = [...latest.values()];
+  const current = latestRuns(runs);
   if (current.some((r) => r.status === "action_required" || r.status === "waiting")) return "waiting";
   if (current.some((r) => r.status === "completed" && !["success", "neutral", "skipped"].includes(r.conclusion ?? ""))) return "failure";
   if (rollup === "FAILURE" || rollup === "ERROR") return "failure";
@@ -150,6 +145,16 @@ export function ciState(rollup: string | null | undefined, runs: WorkflowRun[] |
   if (rollup === "PENDING" || rollup === "EXPECTED") return "pending";
   if (!current.length && !rollup) return "none";
   return "success";
+}
+
+/** The newest run of each workflow and event. */
+function latestRuns(runs: WorkflowRun[]): WorkflowRun[] {
+  const latest = new Map<string, WorkflowRun>();
+  for (const r of runs) {
+    const key = `${r.workflow_id}:${r.event}`;
+    if (!latest.has(key) || latest.get(key)!.id < r.id) latest.set(key, r);
+  }
+  return [...latest.values()];
 }
 
 // ---- facts -------------------------------------------------------------------
@@ -165,10 +170,14 @@ export interface PrFacts {
   first_time_contributor: boolean;
   tone: string;
   changed_lines: number;
+  additions: number;
+  deletions: number;
   files: string[];
   risk: Risk;
   risk_reasons: string[];
   ci: CiState;
+  /** The newest run of each workflow at the head, e.g. "Build #812: success https://…". */
+  ci_runs: string[];
   mergeable: string;
   merge_state: string;
   review_decision: string | null;
@@ -202,10 +211,16 @@ export function factsFrom(cfg: ReviewConfig, ref: Required<RepoRef>, pr: PrDetai
     first_time_contributor: FIRST_TIME.includes(assoc),
     tone: FIRST_TIME.includes(assoc) ? cfg.tone.first_time : TRUSTED.includes(assoc) ? cfg.tone.maintainer : cfg.tone.default,
     changed_lines: lines,
+    additions: pr.additions,
+    deletions: pr.deletions,
     files,
     risk,
     risk_reasons: reasons,
     ci: ciState(pr.commits.nodes[0]?.commit.statusCheckRollup?.state, runs),
+    ci_runs: latestRuns(runs ?? []).map((r) => {
+      const url = (r as WorkflowRun & { html_url?: string }).html_url; // GitHub sends it; the type leaves it out
+      return `${r.name} #${r.id}: ${r.status === "completed" ? r.conclusion ?? "completed" : r.status}${url ? ` ${url}` : ""}`;
+    }),
     mergeable: pr.mergeable,
     merge_state: pr.mergeStateStatus,
     review_decision: pr.reviewDecision,
@@ -237,7 +252,9 @@ export interface Check {
 /**
  * What a merge needs (decision 35), checked when it is queued and again just before
  * it runs. A low-risk PR may merge on Matt's card approval without another
- * maintainer's review; everything else needs one.
+ * maintainer's review (decision 35), and so may a medium-risk one (C-6):
+ * every other check here must still pass at the reviewed head, both times. A
+ * high-risk PR needs a maintainer's approval on GitHub.
  */
 export function mergeChecks(f: PrFacts, reviewedSha: string, review: Review | null): Check[] {
   const head = f.sha.slice(0, 7);
@@ -261,12 +278,45 @@ export function mergeChecks(f: PrFacts, reviewedSha: string, review: Review | nu
     c("threads resolved", f.unresolved_threads === 0, f.unresolved_threads === null ? "too many threads to check" : `${f.unresolved_threads} unresolved`),
     f.risk === "low"
       ? c("maintainer approval", true, "not needed for a low-risk PR")
-      : c("maintainer approval", f.approvals.length > 0, f.approvals.length ? `approved by ${f.approvals.join(", ")}` : `none yet; a ${f.risk}-risk PR needs one`),
+      : f.risk === "medium" && !f.approvals.length
+        ? c("maintainer approval", true, "none on GitHub; for a medium-risk PR, Matt's approval of this card stands in for it")
+        : c("maintainer approval", f.approvals.length > 0, f.approvals.length ? `approved by ${f.approvals.join(", ")}` : `none yet; a ${f.risk}-risk PR needs one`),
   ];
 }
 
 export const failed = (checks: Check[]) => checks.filter((c) => !c.ok);
 export const checklist = (checks: Check[]) => checks.map((c) => `${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`).join("\n");
+
+const FINDING_CARD_MAX = 400;
+
+/**
+ * What the gateway itself puts on every github.merge card (C-6), from facts it
+ * fetched rather than the proposer's word: the files and lines changed, Mira's review
+ * and its findings by severity, the CI runs at the head, and links to the PR and diff.
+ * The proposer's rationale above it describes the change and the discussion.
+ */
+export function mergeCard(f: PrFacts, review: Review | null, findings: Pick<Finding, "path" | "line" | "severity" | "area" | "summary">[]): string {
+  const [repo, number] = f.target.split("#");
+  const url = `https://github.com/${repo}/pull/${number}`;
+  const shown = 10;
+  const order = (s: string) => (SEVERITIES as readonly string[]).indexOf(s);
+  const sorted = [...findings].sort((a, b) => order(a.severity) - order(b.severity));
+  const cut = (t: string) => (t.length > FINDING_CARD_MAX ? `${t.slice(0, FINDING_CARD_MAX - 1)}…` : t);
+  return [
+    `The change at ${f.sha.slice(0, 7)}: "${f.title}" by ${f.author ?? "unknown"}`,
+    `- ${f.files.length} file${f.files.length === 1 ? "" : "s"}, +${f.additions} −${f.deletions} lines: ${f.files.slice(0, shown).join(", ")}${f.files.length > shown ? ` and ${f.files.length - shown} more` : ""}`,
+    `- PR: ${url}`,
+    `- Diff: ${url}/files`,
+    "",
+    review
+      ? `Mira's review ${review.id} (${review.decision_id ?? "no decision"}) at ${review.sha.slice(0, 7)}: ${findings.length} finding${findings.length === 1 ? "" : "s"}${review.url ? `, ${review.url}` : ""}`
+      : `Mira's review: none at ${f.sha.slice(0, 7)}`,
+    ...sorted.map((x) => `- ${x.severity} · ${x.area}${x.path ? ` · ${x.path}${x.line ? `:${x.line}` : ""}` : ""}: ${cut(x.summary)}`),
+    "",
+    `CI at ${f.sha.slice(0, 7)}: ${f.ci}`,
+    ...(f.ci_runs.length ? f.ci_runs.map((r) => `- ${r}`) : ["- no workflow runs"]),
+  ].join("\n");
+}
 
 // ---- the review queue ---------------------------------------------------------
 

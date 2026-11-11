@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { approve, markDone, reject, stop } from "../src/controls";
 import { handleTool, ToolError } from "../src/tools";
-import { decisionCard } from "../src/format";
+import { decisionButtons, decisionCard } from "../src/format";
+import { postDecision } from "../src/agents";
+import { handleUpdate } from "../src/commands";
 import { NETWORK, fakeGitHub, makeTestCtx } from "./helpers";
 
 describe("request_action", () => {
@@ -344,6 +346,86 @@ describe("no duplicate replies in a conversation", () => {
     await ctx.db.upsertSession({ id: "sesn_dep", agent: "ada", origin: "deployment" });
     expect(await handleTool(ctx, "ada", "sesn_dep", "send_to_matt", { text: "Check-in" })).toBe("Sent.");
     expect(fakes.sent).toHaveLength(1);
+  });
+});
+
+describe("send_to_matt re-sends decision cards (C-4)", () => {
+  const queue = async (ctx: any, n: number) => {
+    for (let i = 0; i < n; i++) {
+      await ctx.db.createDecision({ agent: "mira", kind: "github.comment", target: "accordproject/concerto#1", summary: `s${i}`, rationale: "r", risk: "low", payload: { text: "Thanks" } });
+    }
+  };
+
+  it("sends the text, then each open decision's card with its buttons, in the order given", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    await queue(ctx, 2);
+    await ctx.db.upsertSession({ id: "sesn_dep", agent: "ada", origin: "deployment" });
+    await postDecision(ctx, (await ctx.db.getDecision("D-1"))!);
+    const original = (await ctx.db.getDecision("D-1"))!.tg_message_id;
+    fakes.sent.length = 0;
+    const out = await handleTool(ctx, "ada", "sesn_dep", "send_to_matt", { text: "Check-in", decision_ids: ["D-2", "d-1"] });
+    expect(out).toBe("Sent the message and 2 cards: D-2, D-1.");
+    expect(fakes.sent.map((m) => m.text.split(" · ")[0])).toEqual(["Check-in", "D-2", "D-1"]);
+    const d1 = (await ctx.db.getDecision("D-1"))!;
+    expect(fakes.sent[2].text).toBe(decisionCard(d1));
+    expect(fakes.sent[2].opts).toEqual({ buttons: decisionButtons(d1) });
+    // The original card is still the one the decision records, so it keeps updating.
+    expect(d1.tg_message_id).toBe(original);
+  });
+
+  it("in a conversation, sends only the cards when there is no text", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    await queue(ctx, 1);
+    await ctx.db.upsertSession({ id: "sesn_chat", agent: "ada", origin: "telegram", chat_id: 42 });
+    expect(await handleTool(ctx, "ada", "sesn_chat", "send_to_matt", { decision_ids: ["D-1"] })).toBe("Sent 1 card: D-1.");
+    expect(fakes.sent).toHaveLength(1);
+    expect(fakes.sent[0].text).toContain("D-1 · Mira · github.comment");
+    await expect(handleTool(ctx, "ada", "sesn_chat", "send_to_matt", { text: "Check-in", decision_ids: ["D-1"] })).rejects.toThrow(/Matt gets your reply/);
+    expect(fakes.sent).toHaveLength(1);
+  });
+
+  it("refuses ids that aren't open, and sends nothing", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    await queue(ctx, 2);
+    await reject(ctx, "D-2");
+    await ctx.db.upsertSession({ id: "sesn_dep", agent: "ada", origin: "deployment" });
+    fakes.sent.length = 0;
+    await expect(handleTool(ctx, "ada", "sesn_dep", "send_to_matt", { text: "Check-in", decision_ids: ["D-1", "D-2", "D-9"] })).rejects.toThrow(
+      /Nothing sent[\s\S]*D-2 is rejected, not open[\s\S]*D-9 doesn't exist/,
+    );
+    expect(fakes.sent).toHaveLength(0);
+  });
+
+  it("refuses more than 10 ids, and a call with neither text nor ids", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    await ctx.db.upsertSession({ id: "sesn_dep", agent: "ada", origin: "deployment" });
+    const ids = Array.from({ length: 11 }, (_, i) => `D-${i + 1}`);
+    await expect(handleTool(ctx, "ada", "sesn_dep", "send_to_matt", { text: "x", decision_ids: ids })).rejects.toThrow(/At most 10/);
+    await expect(handleTool(ctx, "ada", "sesn_dep", "send_to_matt", {})).rejects.toThrow(/text is required/);
+    await expect(handleTool(ctx, "ada", "sesn_dep", "send_to_matt", { decision_ids: [] })).rejects.toThrow(/text is required/);
+    expect(fakes.sent).toHaveLength(0);
+  });
+
+  it("answering a re-sent card decides the decision and updates both cards", async () => {
+    const { ctx } = makeTestCtx();
+    await queue(ctx, 1);
+    await postDecision(ctx, (await ctx.db.getDecision("D-1"))!);
+    const original = (await ctx.db.getDecision("D-1"))!.tg_message_id!;
+    await ctx.db.upsertSession({ id: "sesn_dep", agent: "ada", origin: "deployment" });
+    await handleTool(ctx, "ada", "sesn_dep", "send_to_matt", { decision_ids: ["D-1"] });
+    const edits: { messageId: number; buttons: unknown }[] = [];
+    (ctx.tg as any).edit = async (_chat: number, messageId: number, _text: string, buttons: unknown) => {
+      edits.push({ messageId, buttons });
+    };
+    const resent = original + 1;
+    await handleUpdate(ctx, {
+      update_id: 1,
+      callback_query: { id: "q1", from: { id: 42 }, data: "r:D-1", message: { message_id: resent, chat: { id: 42, type: "private" } } },
+    });
+    const d = (await ctx.db.getDecision("D-1"))!;
+    expect(d.status).toBe("rejected");
+    expect(edits.map((e) => e.messageId).sort()).toEqual([original, resent].sort());
+    expect(edits.every((e) => JSON.stringify(e.buttons) === "[]")).toBe(true);
   });
 });
 

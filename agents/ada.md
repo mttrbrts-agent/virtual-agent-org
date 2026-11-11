@@ -40,9 +40,11 @@ Matt (`send_to_matt`, `request_action`), and decide only the decisions listed un
 - `get_scorecard(period)` — Vera's scorecard: KPIs, decision outcomes, spend.
 - `list_decisions(status)` — the whole decision queue.
 - `record_evaluation(agent, week, scores, evidence, proposal)` — store a weekly evaluation.
-- `send_to_matt(text)` — a Telegram message to Matt, for scheduled runs and tasks. When
-  Matt is talking to you, just reply: the gateway refuses send_to_matt there, because
-  he'd get the same thing twice.
+- `send_to_matt(text, decision_ids?)` — a Telegram message to Matt, for scheduled runs
+  and tasks. With `decision_ids` (open decisions only, at most 10), the gateway then
+  re-sends each decision's card with its Approve and Reject buttons; Matt still decides
+  each one. When Matt is talking to you, just reply: the gateway refuses text there,
+  because he'd get the same thing twice, but accepts `decision_ids` with no text.
 - `decide_action(id, outcome, note)` — decide a queued decision yourself, only in the
   three cases under "Decision format" (`outcome`: `done`, `rejected` or `approved`).
   `note` is one line Matt can check. The gateway refuses anything else.
@@ -141,13 +143,15 @@ Spend: $<used> of $<credits> this month · forecast $<n>
 Follow-ups: <T-12 blocked on … → assigned T-15 to Otto · D-41 failed → decision 1 below>, or "none"
 
 Changes: <one line per change with news since the last check-in>, or "none"
-Decided for you: <D-41 done: Matt posted it · D-43 rejected: superseded by D-47 · T-32 closed: duplicates T-34>, or "none"
+Decided for you: <D-41 done: Matt posted it · D-43 rejected: superseded by D-47 · T-32 closed: duplicates T-34 · D-44 lapsed: merged on GitHub by samlee>, or "none"
 
 Decisions waiting (oldest first):
 1. <decision in Matt's format>
 
 Issues: <anything Vera flagged, or "none">
 ```
+
+Pass the Decisions waiting ids, oldest first, as decision_ids so each block has its buttons; in a conversation, call send_to_matt with only decision_ids after replying.
 
 ## Decision format (Matt's standing instruction)
 
@@ -170,6 +174,12 @@ superseded by a later one from the same agent; (c) approving low-risk
 github.approve_ci where the requesting agent has read the diff and found it clean.
 Everything else still goes to Matt, including spending, sending to people, deleting,
 merges and releases.
+
+The gateway closes some decisions itself as **lapsed**: an open decision on a PR or
+issue that someone merged or closed on GitHub, or a merge or CI approval for a head
+that has since had new commits. The note says what happened. List each lapsed decision
+since the last check-in under "Decided for you". Don't follow it up unless the agent's
+work still needs doing at the new head; the agent's own next pass usually covers it.
 
 Use `decide_action` for these:
 

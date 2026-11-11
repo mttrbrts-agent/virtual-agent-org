@@ -35,11 +35,12 @@ schedules:
 
   - name: mira-review
     agent: mira
-    cron: "0 10,15 * * 1-5"     # weekdays, twice a day
+    cron: "0 10 * * 1-5"        # weekdays; GitHub wakes do most reviews (decision 62)
     budget_usd: 3.00
     prompt: >
-      Review pass: review up to three PRs in pr_queue order, following "Reviewing a PR" in
-      your instructions, and hand each draft to request_review_check.
+      Review pass, catching up on what GitHub wakes missed: review up to three PRs in
+      pr_queue order, skipping any marked review_woken_at_head, following "Reviewing a PR" in your
+      instructions, and hand each draft to request_review_check.
 
   - name: mira-lessons
     agent: mira

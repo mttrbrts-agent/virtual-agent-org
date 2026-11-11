@@ -133,6 +133,15 @@ export async function postDecision(ctx: Ctx, d: Decision) {
   await ctx.db.setDecisionMessage(d.id, id);
 }
 
+/**
+ * Sends the owner an open decision's Telegram card again, with its buttons, for
+ * send_to_matt's decision_ids (C-4). The original's message id is kept, so answering
+ * either card decides the same decision and the original card still updates.
+ */
+export async function resendDecisionCard(ctx: Ctx, d: Decision): Promise<number> {
+  return ctx.tg.send(ctx.ownerChatId, decisionCard(d), { buttons: decisionButtons(d) });
+}
+
 /** DMs the owner the card in Discord, for decisions they may approve there. True if it was delivered. */
 export async function postDiscordCard(ctx: Ctx, d: Decision): Promise<boolean> {
   if (!ctx.dc || !ctx.ownerDiscordId || !discordApprovable(ctx, d)) return false;

@@ -37,6 +37,19 @@ export async function sign(secret: string, id: string, ts: string, body: string)
   return bytesToB64(mac);
 }
 
+/**
+ * Verifies a GitHub webhook delivery: X-Hub-Signature-256 is "sha256=<hex>", the
+ * HMAC-SHA256 of the raw body keyed with the webhook's secret. GitHub sends no
+ * timestamp; replays are caught by the delivery id instead.
+ */
+export async function verifyGitHub(secret: string, sigHeader: string | null, rawBody: string): Promise<boolean> {
+  if (!secret || !sigHeader?.startsWith("sha256=")) return false;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody)));
+  const hex = Array.from(mac, (b) => b.toString(16).padStart(2, "0")).join("");
+  return timingSafeEqual(sigHeader.slice(7).toLowerCase(), hex);
+}
+
 export async function verifyWebhook(
   secret: string,
   headers: Headers,

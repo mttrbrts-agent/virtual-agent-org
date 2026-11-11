@@ -2,19 +2,20 @@
 // it checks who may call what before doing anything.
 
 import { ActionInvalid, actionRisk, validateAction, type Normalised } from "./actions";
-import { AgentUnavailable, postDecision, refreshDecisionCard, sendAgentMessage, startSession } from "./agents";
+import { AgentUnavailable, postDecision, refreshDecisionCard, resendDecisionCard, sendAgentMessage, startSession } from "./agents";
 import { changeBudget, missingEvidence, proposalGuard, repeatEvidence, submitChange } from "./changes";
 import { cap, type Ctx } from "./context";
 import type { Change, Decision, StartedBy } from "./db";
 import { ciSensitivePaths, executeDecision, inScope } from "./executors";
 import { parseTarget, type RepoRef } from "./github";
+import { ACTIVITY_DAYS, activityLine } from "./githubEvents";
 import { memberOf } from "./people";
 import {
-  GATEWAY_LABEL, KIND_LABELS, checklist, ciApprovalRisks, failed, mergeChecks, parseFindings, prFacts, publicTextProblems, queueFrom, renderReview, reviewConfig, reviewLabels, type PrFacts, type ReviewFinding,
+  GATEWAY_LABEL, KIND_LABELS, checklist, ciApprovalRisks, failed, mergeCard, mergeChecks, parseFindings, prFacts, publicTextProblems, queueFrom, renderReview, reviewConfig, reviewLabels, type PrFacts, type ReviewFinding,
 } from "./review";
 import { maxRisk, toRisk, type Risk } from "./risk";
 import { schemaProblems } from "./schema";
-import { READS_ALL_DECISIONS, TOOLS, isToolName, type ToolName, type ToolSpec } from "./toolDefs";
+import { MAX_RESENT_CARDS, READS_ALL_DECISIONS, TOOLS, isToolName, type ToolName, type ToolSpec } from "./toolDefs";
 import { isTechWg } from "./vimeo";
 
 export class ToolError extends Error {}
@@ -86,8 +87,22 @@ const HANDLERS: Record<ToolName, Handler> = {
     if (!inScope(ctx, ref)) throw new ToolError(`${repo} is not in the configured repos`);
     const name = `${ref.owner}/${ref.repo}`;
     const gh = await ctx.github();
-    const [pulls, reviewed] = await Promise.all([gh.openPulls(ref), ctx.db.reviewedHeads(name)]);
-    return JSON.stringify(queueFrom(name, pulls, reviewed));
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().replace("T", " ").slice(0, 19);
+    const [pulls, reviewed, events, woken] = await Promise.all([
+      gh.openPulls(ref),
+      ctx.db.reviewedHeads(name),
+      ctx.db.githubActivity(name, ago(ACTIVITY_DAYS)),
+      ctx.db.reviewWokenHeads(name, ago(1)),
+    ]);
+    // Decision 62: what moved on each PR lately, and whether a review wake started on its
+    // current head in the last day. Only that marks it as handled: a first response, an
+    // older head or a wake from days ago leaves it to the catch-up pass.
+    return JSON.stringify(
+      queueFrom(name, pulls, reviewed).map((p) => {
+        const activity = activityLine(events.filter((e) => e.target === p.target.toLowerCase()));
+        return { ...p, ...(activity ? { activity } : {}), ...(woken.has(`${p.target.toLowerCase()}@${p.sha}`) ? { review_woken_at_head: true } : {}) };
+      }),
+    );
   },
 
   review_findings: async (ctx, { input }) => {
@@ -195,15 +210,32 @@ const HANDLERS: Record<ToolName, Handler> = {
   },
 
   send_to_matt: async (ctx, { agent, sessionId, input }) => {
-    const text = s(input.text, "text");
+    const text = s(input.text, "text", false);
+    const ids = [...new Set(list(input.decision_ids).map((id) => id.trim().toUpperCase()))];
+    if (!text && !ids.length) throw new ToolError("text is required, unless you give decision_ids");
+    if (ids.length > MAX_RESENT_CARDS) throw new ToolError(`At most ${MAX_RESENT_CARDS} decision_ids per call; you gave ${ids.length}.`);
     const row = await ctx.db.getSession(sessionId);
-    if (row?.chat_id || row?.discord_user) {
+    if (text && (row?.chat_id || row?.discord_user)) {
       // Matt is already in this conversation and gets her reply: sending as well duplicates it.
-      throw new ToolError("You're in a conversation: Matt gets your reply. Put this in your reply instead of using send_to_matt.");
+      throw new ToolError(
+        "You're in a conversation: Matt gets your reply. Put this in your reply instead of using send_to_matt; to give him the decisions' buttons, call it with only decision_ids.",
+      );
     }
+    // Every id is checked before anything is sent, so a refusal sends nothing (C-4).
+    const cards: Decision[] = [];
+    const problems: string[] = [];
+    for (const id of ids) {
+      const d = await ctx.db.getDecision(id);
+      if (!d) problems.push(`${id} doesn't exist`);
+      else if (d.status !== "open") problems.push(`${id} is ${d.status}, not open`);
+      else cards.push(d);
+    }
+    if (problems.length) throw new ToolError(`Nothing sent. Only open decisions can be re-sent:\n- ${problems.join("\n- ")}`);
     // Recorded, so replying to it in Telegram reaches this session.
-    await sendAgentMessage(ctx, { telegram: ctx.ownerChatId }, { agent, sessionId }, text);
-    return "Sent.";
+    if (text) await sendAgentMessage(ctx, { telegram: ctx.ownerChatId }, { agent, sessionId }, text);
+    // The same card and buttons as the original; answering either decides the same decision.
+    for (const d of cards) await resendDecisionCard(ctx, d);
+    return cards.length ? `Sent${text ? " the message and" : ""} ${cards.length} card${cards.length === 1 ? "" : "s"}: ${cards.map((d) => d.id).join(", ")}.` : "Sent.";
   },
 
   vimeo_recordings: async (ctx, { input }) => {
@@ -317,7 +349,7 @@ async function readAudit(ctx: Ctx, input: Input): Promise<string> {
     notes: [
       "Spend is list cost in US cents from Managed Agents session usage, counted on the day each session started.",
       "Sessions from before token and model recording began show 0 tokens and model 'unknown'.",
-      "Decision statuses: open, approved (not yet run), executed, failed (approved but the action failed), rejected. Tool confirmations are excluded.",
+      "Decision statuses: open, approved (not yet run), executed, failed (approved but the action failed), rejected, lapsed (closed by the gateway because the PR or issue merged, closed or got new commits first; neither approved nor rejected). Tool confirmations are excluded.",
       "refusals: custom tool calls the gateway refused for bad input. Cite a refusal or denial as audit:<id>.",
       "Public actions run only through decisions: executed_actions lists them with their ids. Check tool_calls for any external tool that writes.",
       "changes: spec changes the gateway measured in this period, the days before going live against as many after (14, or more when tried again for too little data). overlaps names other changes to the same agent, or to the network, that went live within those windows.",
@@ -374,7 +406,9 @@ async function requestAction(ctx: Ctx, agent: string, sessionId: string, input: 
       throw new ToolError(`Not queued. The merge can't go ahead yet:\n${checklist(failed(checks))}\nDon't retry in this session; report it.`);
     }
     risk = maxRisk(risk, f.risk === "high" ? "high" : "medium");
-    rationale = `${rationale}\n\nGateway checks at ${f.sha.slice(0, 7)} (${f.risk} risk: ${f.risk_reasons.join("; ")}):\n${checklist(checks)}`;
+    // C-6: the card carries what Matt needs to check the merge from the card alone.
+    const findings = review ? await ctx.db.reviewFindings(review.id) : [];
+    rationale = `${rationale}\n\n${mergeCard(f, review, findings)}\n\nGateway checks at ${f.sha.slice(0, 7)} (${f.risk} risk: ${f.risk_reasons.join("; ")}):\n${checklist(checks)}`;
     reviewId = review?.id;
   }
   if (kind === "spec.change") {
@@ -757,9 +791,14 @@ async function requestReviewCheck(ctx: Ctx, sessionId: string, input: Input): Pr
     `   only about the PR, in a ${f.tone} tone: be kind and specific, and say what would make it mergeable. Mention no one`,
     "   except the author and put code in backticks. If the gateway refuses the text, fix it and submit again.",
     "5. Only if submit_review reports nothing blocking, queue request_action(kind=\"github.merge\") with payload",
-    `   {sha: "${f.sha}", merge_method: "squash"} and a rationale citing your verification. The gateway checks CI,`,
-    "   mergeability, threads and (unless the PR is low risk) a maintainer's approval, and refuses with the reasons if",
-    "   any fails. If it refuses, put the reasons in report_status; don't retry.",
+    `   {sha: "${f.sha}", merge_method: "squash"}. Write the rationale so Matt can check the merge from the card alone:`,
+    "   - what the change does, in plain English, and any effect on public APIs, the build or dependencies;",
+    "   - the discussion: the author's description, each review and comment with its author, resolved threads and how",
+    "     they were resolved, and any open questions;",
+    "   - the review decision id submit_review gave you, and the CI run and its result.",
+    "   The gateway adds the files and lines changed, your findings by severity, the CI runs and the links. It checks CI,",
+    "   mergeability, threads and (for a high-risk PR) a maintainer's approval, and refuses with the reasons if any",
+    "   fails. If it refuses, put the reasons in report_status; don't retry.",
     "",
     `Facts from the gateway: ${factsLine(f)}.`,
     ...(f.path_notes.length ? ["Path rules:", ...f.path_notes.map((n) => `- ${n}`)] : []),

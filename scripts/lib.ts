@@ -36,7 +36,7 @@ export function loadSpecs(): Record<string, Spec> {
 export interface NetworkYaml {
   network: { name: string; timezone: string; current_phase: number; schedules_enabled?: boolean };
   github: { org: string; sandbox_repo: string; network_repo: string; repos: string[] };
-  budgets: { monthly_credit_usd: number; member_daily_messages?: number; follow_up_daily_wakes?: number; follow_up_budget_usd?: number; mechanic_small_usd?: number; mechanic_large_usd?: number };
+  budgets: { monthly_credit_usd: number; member_daily_messages?: number; follow_up_daily_wakes?: number; follow_up_budget_usd?: number; mechanic_small_usd?: number; mechanic_large_usd?: number; github_wakes?: Record<string, { daily: number; usd: number }> };
   self_improvement?: { since: string | null; stale_days: number; proposal_gap_days?: number; min_decided?: number; min_days?: number; commit_author: { name: string; email: string } };
   agents: Record<string, number>;
 }

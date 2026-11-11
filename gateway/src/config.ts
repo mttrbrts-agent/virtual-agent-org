@@ -71,6 +71,11 @@ export interface NetworkConfig {
    * wakes per UTC day, and each wake's session budget. Absent or 0 wakes = off.
    */
   follow_up?: { daily_wakes: number; budget_cents: number };
+  /**
+   * Starting Mira when GitHub events call for it (decision 62): wakes per UTC day and
+   * each wake's session budget, by trigger. Absent, or 0 a day, turns that trigger off.
+   */
+  github_wakes?: Partial<Record<"review" | "merge" | "first_response", { daily: number; budget_cents: number }>>;
   /** The self-improvement loop (decision 55). `since` null = off; task_cents are Mandla's session budgets. */
   self_improvement?: {
     since: string | null;
