@@ -1,3 +1,4 @@
+import type { ModelChoice } from "./config";
 import { cap, type Ctx } from "./context";
 import type { Decision, SentMessage, SessionRow, StartedBy } from "./db";
 import { decisionButtons, decisionCard, discordCard, discordCardFits } from "./format";
@@ -39,7 +40,7 @@ export async function startSession(
   text: string,
   origin: SessionRow["origin"],
   startedBy: StartedBy,
-  opts: { chatId?: number; discordUser?: string; taskId?: string; budgetCents?: number; model?: string } = {},
+  opts: { chatId?: number; discordUser?: string; taskId?: string; budgetCents?: number; model?: ModelChoice } = {},
 ): Promise<string> {
   await assertAvailable(ctx, agent);
   const dep = ctx.deployed.agents[agent];
@@ -64,10 +65,19 @@ export async function startSession(
     discord_user: opts.discordUser,
     task_id: opts.taskId,
     started_by: startedBy,
-    model: opts.model ?? defaultModel(ctx, agent),
+    model: opts.model?.id ?? defaultModel(ctx, agent),
   });
   await ctx.db.audit({ agent, session_id: session.id, event_type: "gateway.session_started", detail: { origin, task: opts.taskId, started_by: startedBy } });
   return session.id;
+}
+
+/**
+ * The model and effort for one of an agent's tasks in models.yaml (decision 65), for a
+ * session doing that work. Undefined when the agent has no such task.
+ */
+export function taskModel(ctx: Ctx, agent: string, task: string): ModelChoice | undefined {
+  const t = ctx.network.agents[agent]?.tasks?.[task];
+  return t ? { id: t.model, ...(t.effort ? { effort: t.effort } : {}) } : undefined;
 }
 
 /** The model an agent runs on unless a session overrides it (its default tier in models.yaml). */

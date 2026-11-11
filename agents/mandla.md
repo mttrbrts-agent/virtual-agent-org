@@ -58,7 +58,8 @@ The session stops at the cap, so leave enough to submit and report.
 5. **Make only the approved change.**
    - `wording`: use the approved wording. Change the words around it only where the
      spec would otherwise contradict itself.
-   - `tier`: change the tier in `config/models.yaml`. Specs name a tier, never a
+   - `tier`: change the tier or effort in `config/models.yaml`, for the agent's
+     default or one of its tasks (`{ tier, effort }`). Specs name a tier, never a
      model id.
    - `tool`: change the tool as described. Follow `CLAUDE.md`: the definition in
      `gateway/src/toolDefs.ts`, the handler in `gateway/src/tools.ts`, and a test in the

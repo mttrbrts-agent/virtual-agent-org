@@ -39,6 +39,16 @@ export interface AgentConfig {
   requestable: string[];
   /** The model of the agent's default tier in models.yaml. */
   model?: string;
+  /** The agent's effort level in models.yaml; absent = the model's own default (decision 65). */
+  effort?: string;
+  /** The agent's tasks in models.yaml: the model and effort for sessions doing that work. */
+  tasks?: Record<string, { model: string; effort?: string }>;
+}
+
+/** The model a session runs on when it isn't the agent's own: an id and, optionally, an effort level. */
+export interface ModelChoice {
+  id: string;
+  effort?: string;
 }
 
 export interface NetworkConfig {
@@ -87,6 +97,12 @@ export interface NetworkConfig {
     commit_author: { name: string; email: string };
     task_cents: { small: number; large: number };
   };
+  /**
+   * Mira's extra triage passes (decision 65): at each local time in `times`, a pass starts
+   * only if a PR or issue was opened in a repo in scope since the pass before (the first
+   * looks back to `after`, the daily scheduled pass). Absent = off.
+   */
+  triage_checks?: { after: string; times: string[]; budget_cents: number };
   /** Model ids by tier, from models.yaml, for sessions the gateway starts on a stronger model. */
   model_tiers?: Record<string, string>;
 }

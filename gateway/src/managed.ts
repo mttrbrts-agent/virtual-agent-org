@@ -4,6 +4,8 @@
 // Verified against platform.claude.com/docs/en/managed-agents/* on 2026-10-31.
 // Items marked VERIFY were not confirmed in the docs read; check them during Phase 0.
 
+import type { ModelChoice } from "./config";
+
 const BASE = "https://api.anthropic.com/v1";
 const BETA = "managed-agents-2026-04-01";
 const MEMORY_BETA = "agent-memory-2026-07-22"; // memory store endpoints only; never combine
@@ -22,7 +24,8 @@ export interface SessionEvent {
 export interface Session {
   id: string;
   status: "idle" | "running" | "rescheduling" | "terminated";
-  agent?: { id: string; version?: number } | string;
+  /** After any per-session override (a scheduled deployment's task, say), so `model` is what the session runs on. */
+  agent?: { id: string; version?: number; model?: string | { id: string } } | string;
   stop_reason?: { type: string; event_ids?: string[] };
   // Checked against the live API: a session reports cache writes as
   // `cache_creation`, split by cache lifetime, not as `cache_creation_input_tokens`.
@@ -71,8 +74,11 @@ export class ManagedClient {
     memoryStoreIds?: { id: string; access: "read_write" | "read_only" }[];
     text?: string;
     budgetCents?: number;
-    /** Runs this session on another model. VERIFY: same override shape as scheduled deployments. */
-    model?: string;
+    /**
+     * Runs this session on another model or effort. The override replaces the agent's model
+     * object in full, so it carries its own effort. VERIFY: same override shape as scheduled deployments.
+     */
+    model?: ModelChoice;
   }): Promise<Session> {
     return this.req("POST", "/sessions", {
       agent: p.model ? { type: "agent_with_overrides", id: p.agentId, model: p.model } : p.agentId,
@@ -228,6 +234,13 @@ export function userMessage(text: string) {
 export function sessionAgentId(s: Session): string | undefined {
   if (!s.agent) return undefined;
   return typeof s.agent === "string" ? s.agent : s.agent.id;
+}
+
+/** The model a session runs on, as the session reports it; undefined if it doesn't say. */
+export function sessionModel(s: Session): string | undefined {
+  if (!s.agent || typeof s.agent === "string") return undefined;
+  const m = s.agent.model;
+  return typeof m === "string" ? m : m?.id;
 }
 
 export function costCents(s: Session): number {

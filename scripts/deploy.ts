@@ -22,6 +22,8 @@ import { renderContext } from "./repos";
 const DRY = process.argv.includes("--dry-run");
 const ROTATE = process.argv.includes("--rotate-credentials");
 const STATE_PATH = join(ROOT, "gateway/src/generated/deployed.json");
+/** Where evaluation/rubric.md goes in the shared memory store; agents/ada.md names the mounted path. */
+const RUBRIC_PATH = "/reference/rubric.md";
 
 interface State extends DeployedConfig {
   environment_id?: string;
@@ -61,7 +63,6 @@ async function step<T>(label: string, payload: unknown, fn: () => Promise<T>): P
 function systemPrompt(agent: string): string {
   const spec = cfg.specs[agent];
   const parts = [readText("agents/_protocol.md"), spec.body];
-  if (agent === "ada") parts.push(readText("evaluation/rubric.md"));
   if (agent === "vera") {
     parts.push("## Scorecard schema\n\nEvery scorecard you pass to `write_scorecard` must follow this JSON Schema.\n\n```json\n" +
       readText("evaluation/scorecard.schema.json").trim() + "\n```");
@@ -160,12 +161,19 @@ async function ensureSharedMemory() {
       client.upsertMemory(state.shared_memory_store_id!, "/context/accord.md", sharedContext()),
     );
     if (r) console.log(`  ${r.updated ? "updated" : "created"} ${r.id}`);
+    // Ada reads the rubric only for the weekly evaluation, so it stays out of her system
+    // prompt, which every one of her sessions pays for (decision 65).
+    const rubric = await step(`write ${RUBRIC_PATH}`, {}, () =>
+      client.upsertMemory(state.shared_memory_store_id!, RUBRIC_PATH, readText("evaluation/rubric.md")),
+    );
+    if (rubric) console.log(`  ${rubric.updated ? "updated" : "created"} ${rubric.id}`);
   }
 }
 
 async function ensureAgent(agent: string) {
   const existing = state.agents[agent];
-  const model = cfg.models.tiers[cfg.models.agents[agent].default];
+  const m = cfg.models.agents[agent];
+  const model = modelObject(m.default, m.effort);
   const { tools, mcpServers } = toolsFor(agent);
   const body = {
     name: `${agent}-virtual-agent-org`,
@@ -256,14 +264,20 @@ function linkPeerStores(agents: string[]) {
   }
 }
 
+/** The agent's `model`: the tier's model id, with an effort level when models.yaml sets one (decision 65). */
+function modelObject(tier: string, effort?: string): { id: string; effort?: string } {
+  return { id: cfg.models.tiers[tier], ...(effort ? { effort } : {}) };
+}
+
 async function ensureDeployment(s: (typeof cfg.schedules.schedules)[number]) {
   const dep = state.agents[s.agent];
   if (!dep && !DRY) return;
+  // A task's override replaces the agent's model object in full, effort included.
+  const task = s.task ? cfg.models.agents[s.agent].tasks![s.task] : undefined;
+  const id = dep?.agent_id ?? `<${s.agent}>`;
   const body = {
     name: s.name,
-    agent: s.tier && dep
-      ? { type: "agent_with_overrides", id: dep.agent_id, model: cfg.models.tiers[s.tier] } // VERIFY on deployments
-      : dep?.agent_id ?? `<${s.agent}>`,
+    agent: task ? { type: "agent_with_overrides", id, model: modelObject(task.tier, task.effort) } : id, // VERIFY overrides on deployments
     environment_id: dep?.environment_id ?? state.environment_id,
     schedule: { type: "cron", expression: s.cron, timezone: tz },
     initial_events: [{ type: "user.message", content: [{ type: "text", text: s.prompt.trim() }] }],

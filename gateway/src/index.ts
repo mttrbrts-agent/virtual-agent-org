@@ -5,7 +5,7 @@ import { handleInteraction, type Interaction } from "./discordInteractions";
 import { makeCtx } from "./context";
 import { Db } from "./db";
 import { checkEnv, type Env } from "./env";
-import { applyEvent, dailyCheck, dispatchWakes, normalise } from "./githubEvents";
+import { applyEvent, dailyCheck, dispatchWakes, normalise, triageCheck } from "./githubEvents";
 import { housekeeping, processSession, sweep } from "./sessions";
 import type { TgUpdate } from "./telegram";
 import { timingSafeEqual, verifyGitHub, verifyWebhook } from "./webhookVerify";
@@ -112,6 +112,8 @@ export default {
         await housekeeping(ctx).catch((e) => ctx.db.audit({ event_type: "gateway.housekeeping_error", detail: String(e) }));
         await tickChanges(ctx);
         await sweep(ctx);
+        // Polls GitHub itself, so it runs whether or not the webhook is set up (decision 65).
+        await triageCheck(ctx);
         // Decision 62 is opt-in: without the webhook secret the gateway neither polls GitHub nor wakes anyone.
         if (env.GITHUB_WEBHOOK_SECRET) {
           await dailyCheck(ctx).catch((e) => ctx.db.audit({ event_type: "gateway.github_daily_check_error", detail: String(e) }));

@@ -6,7 +6,7 @@
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BUILTIN_TOOLS, FILE_TOOLS, ROOT, loadAll, readText, type ReviewYaml } from "./lib";
+import { BUILTIN_TOOLS, EFFORTS, FILE_TOOLS, ROOT, loadAll, readText, type ReviewYaml } from "./lib";
 import { REPOS_MARKER, REPO_RE } from "./repos";
 
 export const PERSON_ROLES = ["owner", "tsc_member", "maintainer"];
@@ -166,8 +166,13 @@ export function validate(cfg = loadAll()): string[] {
     if (!m) errs.push(`${n}: no entry in models.yaml`);
     else {
       if (!models.tiers[m.default]) errs.push(`${n}: unknown default tier "${m.default}"`);
-      for (const [task, tier] of Object.entries(m.tasks ?? {})) {
-        if (!models.tiers[tier]) errs.push(`${n}.${task}: unknown tier "${tier}"`);
+      if (m.effort !== undefined && !EFFORTS.includes(m.effort)) errs.push(`${n}: effort must be one of ${EFFORTS.join(", ")}`);
+      for (const [task, t] of Object.entries(m.tasks ?? {})) {
+        if (typeof t !== "object" || !t) errs.push(`${n}.${task}: write a task as { tier, effort }`);
+        else {
+          if (!models.tiers[t.tier]) errs.push(`${n}.${task}: unknown tier "${t.tier}"`);
+          if (t.effort !== undefined && !EFFORTS.includes(t.effort)) errs.push(`${n}.${task}: effort must be one of ${EFFORTS.join(", ")}`);
+        }
       }
     }
     const p = permissions.agents[n];
@@ -220,9 +225,54 @@ export function validate(cfg = loadAll()): string[] {
     const hour = s.cron.trim().split(/\s+/)[1];
     if (/^[123]$/.test(hour)) errs.push(`schedule ${s.name}: avoid 01:00–03:00 local (DST)`);
     if (!(s.budget_usd > 0 && s.budget_usd <= 10)) errs.push(`schedule ${s.name}: budget_usd must be between 0 and 10`);
-    if (s.tier && !models.tiers[s.tier]) errs.push(`schedule ${s.name}: unknown tier "${s.tier}"`);
+    if ("tier" in s) errs.push(`schedule ${s.name}: name a task from models.yaml with task:, not a tier`);
+    if (s.task !== undefined && !models.agents[s.agent]?.tasks?.[s.task]) errs.push(`schedule ${s.name}: ${s.agent} has no task "${s.task}" in models.yaml`);
+  }
+  // Mira's extra triage passes run only when something new was opened (decision 65).
+  const checks = network.budgets.triage_checks;
+  if (checks) {
+    const daily = schedules.schedules.find((s) => s.name === TRIAGE_SCHEDULE);
+    const after = daily ? cronTime(daily.cron) : null;
+    if (!after) errs.push(`budgets.triage_checks needs a ${TRIAGE_SCHEDULE} schedule that runs once a day at a fixed time`);
+    if (!(checks.usd > 0 && checks.usd <= 10)) errs.push("budgets.triage_checks: usd must be between 0 and 10");
+    let last = after ?? "00:00";
+    for (const t of checks.times ?? []) {
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) errs.push(`budgets.triage_checks: "${t}" should be HH:MM`);
+      else if (t <= last) errs.push(`budgets.triage_checks: times must be in order and after the ${TRIAGE_SCHEDULE} run (${after})`);
+      else last = t;
+    }
   }
   return errs;
+}
+
+/** The daily triage pass in schedules.yaml; the gateway's extra passes follow it (decision 65). */
+export const TRIAGE_SCHEDULE = "mira-triage";
+
+/** "HH:MM" for a cron that runs once a day at a fixed time ("0 8 * * *"), else null. */
+export function cronTime(cron: string): string | null {
+  const [min, hour, ...rest] = cron.trim().split(/\s+/);
+  if (!/^\d{1,2}$/.test(min ?? "") || !/^\d{1,2}$/.test(hour ?? "") || rest.join(" ") !== "* * *") return null;
+  return `${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
+}
+
+/** An agent's default model and effort, and its tasks', for the gateway's own sessions. */
+function modelsOf(cfg: ReturnType<typeof loadAll>, n: string) {
+  const m = cfg.models.agents[n];
+  if (!m) return {};
+  const tasks = Object.entries(m.tasks ?? {}).map(([task, t]) => [task, { model: cfg.models.tiers[t.tier], ...(t.effort ? { effort: t.effort } : {}) }]);
+  return {
+    model: cfg.models.tiers[m.default],
+    ...(m.effort ? { effort: m.effort } : {}),
+    ...(tasks.length ? { tasks: Object.fromEntries(tasks) } : {}),
+  };
+}
+
+function triageChecks(cfg: ReturnType<typeof loadAll>) {
+  const checks = cfg.network.budgets.triage_checks;
+  const daily = cfg.schedules.schedules.find((s) => s.name === TRIAGE_SCHEDULE);
+  const after = daily && cronTime(daily.cron);
+  if (!checks?.times?.length || !daily || !after) return {};
+  return { triage_checks: { after, times: checks.times, budget_cents: Math.round(checks.usd * 100) } };
 }
 
 export function compile(cfg = loadAll()) {
@@ -237,6 +287,7 @@ export function compile(cfg = loadAll()) {
       daily_wakes: network.budgets.follow_up_daily_wakes ?? 5,
       budget_cents: Math.round((network.budgets.follow_up_budget_usd ?? 0.5) * 100),
     },
+    ...triageChecks(cfg),
     github_wakes: Object.fromEntries(
       Object.entries(network.budgets.github_wakes ?? {}).map(([trigger, w]) => [trigger, { daily: w.daily, budget_cents: Math.round(w.usd * 100) }]),
     ),
@@ -278,7 +329,7 @@ export function compile(cfg = loadAll()) {
           title: specs[n].title,
           phase: network.agents[n],
           requestable: permissions.agents[n].requestable,
-          model: cfg.models.tiers[cfg.models.agents[n]?.default],
+          ...modelsOf(cfg, n),
         },
       ]),
     ),

@@ -67,7 +67,7 @@ Matt writes British English. Keep messages plain and short.
 | `agents/*.md` | One job spec per agent; `_protocol.md` is included in every agent's system prompt |
 | `config/network.yaml` | Phase, `schedules_enabled`, repos in scope, budgets |
 | `config/permissions.yaml` | Action kinds (risk, executor, `auto`), what each agent may request, `approvals_app`, `review_check_required` |
-| `config/models.yaml` | Model tiers; specs name a tier, never a model id |
+| `config/models.yaml` | Model tiers, and effort per agent and per task (decision 65); specs name a tier, never a model id |
 | `config/review.yaml` | How Mira reviews: areas, limits, tone, risk bands, path rules (decisions 35, 36) |
 | `config/schedules.yaml` | Scheduled deployments (cron, per-run budget, prompt) |
 | `config/people.yaml` | People, roles, maintained repos, GitHub logins |
@@ -144,9 +144,11 @@ only for a fork without the workflow, or when a run fails.
   - Mira asked the PR's author to review;
   - the `mttrbrts-agent` token lacks Pull requests: write.
 - **Not yet verified against the live API:**
-  - `model` override on session creation, used for deep-tier review checks
-    (`managed.ts`);
+  - `model` override on session creation, used for review checks and wakes
+    (`managed.ts`), and `effort` inside it and on the agent's `model` (decision 65);
   - `agent_with_overrides` on scheduled deployments (`deploy.ts`);
+  - that a session reports its overridden model in `agent.model` (`sessionModel` in
+    `managed.ts`), used to record a scheduled task's model;
   - the `unrestricted` networking body for Sage's open environment (`ensureEnvironment`
     in `deploy.ts`, decision 54);
   - events-list pagination (`managed.ts`);

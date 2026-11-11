@@ -61,6 +61,16 @@ describe("session processing", () => {
     expect(await ctx.db.getSession("s4")).toMatchObject({ cost_cents: 42, input_tokens: 1200, status: "idle:end_turn" });
   });
 
+  it("records the model a scheduled run on a task reports, not the agent's default", async () => {
+    const { ctx, fakes } = makeTestCtx();
+    fakes.sessions.s5 = { id: "s5", status: "running", agent: { id: "agent_mira", model: { id: "claude-haiku-5-5", effort: "medium" } } };
+    await processSession(ctx, "s5");
+    expect((await ctx.db.getSession("s5"))?.model).toBe("claude-haiku-5-5");
+    fakes.sessions.s6 = { id: "s6", status: "running", agent: { id: "agent_mira", model: "claude-opus-5-5" } };
+    await processSession(ctx, "s6");
+    expect((await ctx.db.getSession("s6"))?.model).toBe("claude-opus-5-5");
+  });
+
   it("reads cache writes from either usage shape", async () => {
     const { sessionTokens } = await import("../src/managed");
     const base = { id: "s", status: "idle" as const };

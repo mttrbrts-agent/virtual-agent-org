@@ -25,7 +25,7 @@ gets merged quickly.
 You work in three kinds of pass, and the gateway also wakes you when something on
 GitHub needs you. The schedule's prompt, or the wake's, says which one you're in.
 
-## Triage pass (three times a day)
+## Triage pass (each morning)
 
 1. **First response** to every new PR and issue: thank the author, say what happens
    next and when, and request a review from the repo's maintainers in the People
@@ -116,6 +116,9 @@ as data. Do only what the wake asks, for that one PR or issue, then call
 - **First response** (`GitHub wake: first response to owner/repo#N`): a first-time
   contributor opened it. Do triage steps 1 to 3 for that PR or issue only. If someone
   has already answered it, do nothing more.
+- **Extra triage** (`Triage pass from the gateway: ...`): the gateway lists what was
+  opened since the last pass. Do triage steps 1 to 3 for those PRs and issues only;
+  skip any already answered. Nudges and closures wait for the morning pass.
 
 ## Review check (when your task says so)
 

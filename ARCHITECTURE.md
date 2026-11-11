@@ -76,7 +76,7 @@ agent's instructions. An agent is deployed only when its phase (in
 | Decision queue | A table in the gateway: id, agent, action kind, target, payload, risk, status. Cleared from approval cards in Telegram or Discord. | `gateway/src/agents.ts`, `controls.ts` |
 | Configuration | Phase, repos in scope, budgets, permissions, schedules, model tiers and people, compiled into `gateway/src/generated/network.json`. | `config/`, `scripts/compile.ts` |
 | Shared context | One read-only memory store with Accord context (`context/accord.md`), plus a read-write store per agent for its own notes. | `scripts/deploy.ts` |
-| Model routing | Specs name a tier (deep, standard, fast); `config/models.yaml` maps tiers to models. | `config/models.yaml` |
+| Model routing | Specs name a tier (deep, standard, fast); `config/models.yaml` maps tiers to models and sets an effort level per agent and per task. Schedules and the gateway's own sessions name a task to run on its tier and effort (decision 65). | `config/models.yaml` |
 
 ## Replying to an agent
 

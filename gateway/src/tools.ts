@@ -2,7 +2,7 @@
 // it checks who may call what before doing anything.
 
 import { ActionInvalid, actionRisk, validateAction, type Normalised } from "./actions";
-import { AgentUnavailable, postDecision, refreshDecisionCard, resendDecisionCard, sendAgentMessage, startSession } from "./agents";
+import { AgentUnavailable, postDecision, refreshDecisionCard, resendDecisionCard, sendAgentMessage, startSession, taskModel } from "./agents";
 import { changeBudget, missingEvidence, proposalGuard, repeatEvidence, submitChange } from "./changes";
 import { cap, type Ctx } from "./context";
 import type { Change, Decision, StartedBy } from "./db";
@@ -776,7 +776,9 @@ async function requestReviewCheck(ctx: Ctx, sessionId: string, input: Input): Pr
   if (errors.length) throw new ToolError(`Fix the findings and call again:\n- ${errors.join("\n- ")}`);
   const notes = s(input.notes, "notes", false);
   const large = f.risk === "high";
-  const model = large ? ctx.network.model_tiers?.deep : undefined;
+  // Mira's check task in models.yaml for a high-risk PR, her review task otherwise (decision 65).
+  const deep = ctx.network.model_tiers?.deep;
+  const model = large ? (taskModel(ctx, "mira", "check") ?? (deep ? { id: deep } : undefined)) : taskModel(ctx, "mira", "review");
   const sha7 = f.sha.slice(0, 7);
 
   const brief = [
@@ -812,7 +814,7 @@ async function requestReviewCheck(ctx: Ctx, sessionId: string, input: Input): Pr
   try {
     const sid = await startSession(ctx, "mira", brief, "task", await sessionStartedBy(ctx, sessionId), { taskId: task.id, budgetCents: large ? 300 : 150, ...(model ? { model } : {}) });
     await ctx.db.setTask(task.id, "running", sid);
-    return `Review check ${task.id} started (${f.risk} risk${model ? ", deep tier" : ""}). Do not post this review or propose the merge yourself; move on.`;
+    return `Review check ${task.id} started (${f.risk} risk${large && model ? ", deep tier" : ""}). Do not post this review or propose the merge yourself; move on.`;
   } catch (e) {
     await ctx.db.setTask(task.id, "failed");
     if (e instanceof AgentUnavailable) throw new ToolError(`${task.id} not started: ${e.message}`);

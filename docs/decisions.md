@@ -705,3 +705,28 @@ asks to revisit it), **OPEN**, **SUPERSEDED**.
   log can't show what it said.
 - Revisit if spend by agent shows the deep-tier roles taking most of the monthly
   budget, after trying a lower effort level first.
+
+**65. Spending less without lowering quality** · RESOLVED
+
+- Per-task tiers now take effect. `models.yaml` already put Mira's triage on the fast
+  tier and Vera's weekly analysis on the standard tier, but nothing used them: every
+  scheduled run used the agent's default tier. A schedule now names a task (`task:`),
+  and the run uses that task's tier and effort. The gateway's own sessions do the same:
+  review wakes and review checks run as Mira's review task (the check task for a
+  high-risk PR), first-response wakes as her triage task, and Mandla's large changes as
+  his large_change task.
+- Each agent and task sets an effort level: low for routine work (Vera's daily
+  refresh), medium for drafting and chat, high for reviews and code changes. Before,
+  every session ran at its model's default, which is high on Sonnet 5.5. Triage stays
+  at medium because it reads fork diffs before approving CI.
+- Ada stays on Opus 5.5 at low effort for check-ins, chat and follow-ups, with
+  medium for the weekly evaluation. Not chosen yet: moving her to Sonnet 5.5. Her
+  briefs shape every other agent's work; revisit if her scores hold for two weeks at
+  low effort.
+- Mira's triage runs once each morning, for nudges and closures. At 13:00 and 18:00 the
+  gateway asks GitHub what was opened in the repos in scope since the pass before, and
+  starts a triage pass only if something was (`budgets.triage_checks`).
+- The evaluation rubric moves out of Ada's system prompt into the shared memory store,
+  so only the weekly evaluation reads it, not every one of her sessions.
+- Judge each step by Vera's cost per outcome and Ada's scores for the agent concerned.
+

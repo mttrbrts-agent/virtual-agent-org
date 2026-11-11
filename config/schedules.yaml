@@ -1,6 +1,8 @@
 # Recurring work, deployed as Managed Agents scheduled deployments.
 # Times are wall-clock Europe/London; avoid 01:00-03:00 (DST skips/duplicates).
 # budget_usd is a per-run cap: the session pauses when it is reached.
+# task names one of the agent's tasks in models.yaml, whose tier and effort the run uses;
+# without it the run uses the agent's default tier and effort.
 
 schedules:
   - name: ada-checkin
@@ -18,15 +20,18 @@ schedules:
   - name: ada-weekly-evaluation
     agent: ada
     cron: "0 16 * * 5"          # Fridays 16:00
+    task: evaluation            # models.yaml: Ada's tier and effort for this run
     budget_usd: 3.00
     prompt: >
-      Run the weekly evaluation for every active agent using evaluation/rubric.md.
+      Run the weekly evaluation for every active agent, reading the rubric first as your
+      instructions say.
       Record each evaluation with record_evaluation and raise at most one spec.change
       request per agent, following "Proposing a change" in your instructions.
 
   - name: mira-triage
     agent: mira
-    cron: "0 8,13,18 * * *"     # three passes a day
+    cron: "0 8 * * *"           # daily; the gateway adds passes when PRs or issues are opened (network.yaml triage_checks)
+    task: triage
     budget_usd: 1.00
     prompt: >
       Triage pass: first-respond to every new PR and issue, label and route, request
@@ -36,6 +41,7 @@ schedules:
   - name: mira-review
     agent: mira
     cron: "0 10 * * 1-5"        # weekdays; GitHub wakes do most reviews (decision 62)
+    task: review
     budget_usd: 3.00
     prompt: >
       Review pass, catching up on what GitHub wakes missed: review up to three PRs in
@@ -60,6 +66,7 @@ schedules:
   - name: vera-weekly
     agent: vera
     cron: "0 14 * * 5"          # before Ada's evaluation
+    task: analysis
     budget_usd: 1.50
     prompt: >
       Build the weekly scorecard per agent: KPIs, decision outcomes, spend and cost per

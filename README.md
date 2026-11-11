@@ -36,7 +36,7 @@ network is governed; [docs/decisions.md](docs/decisions.md) records why.
 | `agents/` | One job spec per agent, plus `_protocol.md`, which every agent follows |
 | `config/network.yaml` | Phase, agents per phase, repos in scope, budgets |
 | `config/permissions.yaml` | Action kinds and their risk, and what each agent may use and request |
-| `config/models.yaml` | Model tiers; specs name a tier, never a model |
+| `config/models.yaml` | Model tiers, and effort per agent and per task; specs name a tier, never a model |
 | `config/schedules.yaml` | Recurring work: check-ins, triage, reviews, scorecards |
 | `config/people.yaml` | People who can talk to the network, their roles and GitHub logins |
 | `config/mcp_servers.yaml` | External tool servers and where each agent's token comes from |
