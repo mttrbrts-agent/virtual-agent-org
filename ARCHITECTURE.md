@@ -75,7 +75,7 @@ agent's instructions. An agent is deployed only when its phase (in
 | GitHub events | The gateway's App sends PR, review, CI and issue events. The gateway lapses decisions GitHub has moved past, refreshes merge cards, records review outcomes and queues Mira's wakes (decision 62). | `gateway/src/githubEvents.ts` |
 | Decision queue | A table in the gateway: id, agent, action kind, target, payload, risk, status. Cleared from approval cards in Telegram or Discord. | `gateway/src/agents.ts`, `controls.ts` |
 | Configuration | Phase, repos in scope, budgets, permissions, schedules, model tiers and people, compiled into `gateway/src/generated/network.json`. | `config/`, `scripts/compile.ts` |
-| Shared context | One read-only memory store with Accord context (`context/accord.md`), plus a read-write store per agent for its own notes. | `scripts/deploy.ts` |
+| Shared context | One read-only memory store with Accord context (`context/accord.md`), the evaluation rubric and Mira's review method (`skills/pr-review/SKILL.md`, decision 66), plus a read-write store per agent for its own notes. | `scripts/deploy.ts` |
 | Model routing | Specs name a tier (deep, standard, fast); `config/models.yaml` maps tiers to models and sets an effort level per agent and per task. Schedules and the gateway's own sessions name a task to run on its tier and effort (decision 65). | `config/models.yaml` |
 
 ## Replying to an agent

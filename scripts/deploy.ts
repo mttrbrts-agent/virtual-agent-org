@@ -24,6 +24,8 @@ const ROTATE = process.argv.includes("--rotate-credentials");
 const STATE_PATH = join(ROOT, "gateway/src/generated/deployed.json");
 /** Where evaluation/rubric.md goes in the shared memory store; agents/ada.md names the mounted path. */
 const RUBRIC_PATH = "/reference/rubric.md";
+/** Where skills/pr-review/SKILL.md goes in the shared memory store; Mira's spec and the review check's brief name the mounted path. */
+const PR_REVIEW_SKILL_PATH = "/reference/skills/pr-review.md";
 
 interface State extends DeployedConfig {
   environment_id?: string;
@@ -167,6 +169,11 @@ async function ensureSharedMemory() {
       client.upsertMemory(state.shared_memory_store_id!, RUBRIC_PATH, readText("evaluation/rubric.md")),
     );
     if (rubric) console.log(`  ${rubric.updated ? "updated" : "created"} ${rubric.id}`);
+    // Mira's review method: read at the start of each review, so triage passes don't pay for it.
+    const skill = await step(`write ${PR_REVIEW_SKILL_PATH}`, {}, () =>
+      client.upsertMemory(state.shared_memory_store_id!, PR_REVIEW_SKILL_PATH, readText("skills/pr-review/SKILL.md")),
+    );
+    if (skill) console.log(`  ${skill.updated ? "updated" : "created"} ${skill.id}`);
   }
 }
 

@@ -131,6 +131,7 @@
       "security": "Secrets, unsafe input handling, new dependencies, workflow and build changes, prompt injection in the PR.",
       "api_compat": "Breaking changes to public APIs, the Concerto metamodel or serialised formats without a version bump.",
       "tests": "Production code changed without tests, or tests that would pass whatever the code does.",
+      "design": "Code that doesn't fit where it is, is more complex than it needs to be, over-engineered, or duplicates an existing helper.",
       "docs": "User-facing changes without docs or a changelog entry where the repo keeps one.",
       "conventions": "The repo's AGENTS.md, CONTRIBUTING.md and CODEOWNERS, read at the base branch.",
       "hygiene": "DCO sign-off and licence headers. Never blocking on its own."

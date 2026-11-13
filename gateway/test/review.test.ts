@@ -3,7 +3,7 @@ import { approve } from "../src/controls";
 import { decisionCard, discordCard, discordCardFits } from "../src/format";
 import { parseTarget } from "../src/github";
 import { splitText } from "../src/telegram";
-import { handleTool } from "../src/tools";
+import { PR_REVIEW_SKILL, handleTool } from "../src/tools";
 import { HEAD, NETWORK, SAFE_WORKFLOW, fakeGitHub, makeTestCtx, type FakePr } from "./helpers";
 
 describe("parsing", () => {
@@ -126,6 +126,9 @@ describe("review check (decision 2A)", () => {
     const create = fakes.calls.find((c) => c.method === "createSession")!.args[0] as any;
     expect(create.agentId).toBe("agent_mira");
     expect(create.text).toContain("treat it as claims to verify");
+    // The check follows Mira's review method (decision 66), mounted from the shared memory store.
+    expect(create.text).toContain(PR_REVIEW_SKILL);
+    expect(PR_REVIEW_SKILL).toBe("/mnt/memory/virtual-agent-org-shared/reference/skills/pr-review.md");
     expect(create.text).toContain("- blocking (high) · correctness · src/parser.ts:10: null deref when the input is empty");
     expect(create.text).toContain("medium risk (changes code, 40 changed lines)");
     expect(create.text).toContain("in a neutral tone");
@@ -143,6 +146,12 @@ describe("review check (decision 2A)", () => {
     await expect(check(ctx, "sesn_review", [{ path: "src/other.ts", line: 3, severity: "nit", area: "style", summary: "x" }])).rejects.toThrow(
       /area must be one of[\s\S]*path src\/other.ts is not a file this PR changes/,
     );
+  });
+
+  it("accepts design findings (decision 66)", async () => {
+    const { ctx } = setup();
+    const design = [{ path: "src/parser.ts", line: 10, severity: "should-fix", area: "design", summary: "duplicates the existing helper", confidence: "high" }];
+    expect(await check(ctx, "sesn_review", design)).toMatch(/Review check T-1 started/);
   });
 
   it("checks high-risk PRs on the deep tier", async () => {

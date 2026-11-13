@@ -37,7 +37,7 @@ const finding = (summary: string): Schema => ({
     path: str("File the finding is in, as the PR changes it; omit for the whole PR"),
     line: { type: "integer", description: "Line in the PR's version of the file; omit if not tied to one line" },
     severity: { type: "string", enum: ["blocking", "should-fix", "nit"] },
-    area: str("One of the review areas in config/review.yaml: correctness, security, api_compat, tests, docs, conventions, hygiene"),
+    area: str("One of the review areas in config/review.yaml: correctness, security, api_compat, tests, design, docs, conventions, hygiene"),
     summary: str(summary),
   },
   required: ["severity", "area", "summary"],

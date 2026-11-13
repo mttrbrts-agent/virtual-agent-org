@@ -730,3 +730,26 @@ asks to revisit it), **OPEN**, **SUPERSEDED**.
   so only the weekly evaluation reads it, not every one of her sessions.
 - Judge each step by Vera's cost per outcome and Ada's scores for the agent concerned.
 
+**66. How Mira reviews: a published method as her baseline** · DEFAULT
+
+- Mira's review steps said what to look at but not how to judge it. Her review method
+  is now one skill file, `skills/pr-review/SKILL.md`, built on three published
+  baselines: Google's engineering practices for code review (what to look for and
+  when to approve), Addy Osmani's `code-review-and-quality` agent skill (MIT), and
+  Anthropic's `claude-code-security-review` (MIT) for security findings and common
+  false alarms. `NOTICE.md` beside it credits the sources and carries their licences.
+- The method adds what the spec lacked: read the tests first; test every finding
+  against callers, guards and tests before keeping it; leave defects that were
+  already on the base branch out of the review; clear rules for high and medium
+  confidence and for each severity; a list of false alarms not to report.
+- Delivered through the shared memory store, like the evaluation rubric (decision 65):
+  deploy writes it to `/reference/skills/pr-review.md`, and Mira reads it at the start
+  of a review and of a review check. Triage sessions don't pay for it. The file is in
+  Agent Skills format, so it can move to an attached skill later without rewriting.
+- A new review area, `design` (fit, needless complexity, over-engineering,
+  duplication), because all three baselines treat design as a first concern and none
+  of the existing areas covered it.
+- Mira's job spec still wins where the two differ: severities, limits, tone and what
+  the gateway refuses stay as decisions 35 and 36 set them.
+- Judge it by the share of posted findings maintainers act on (`review_findings`).
+  Revisit if it drops, or if `design` findings are mostly dismissed.

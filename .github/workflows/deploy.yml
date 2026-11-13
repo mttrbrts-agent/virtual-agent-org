@@ -70,7 +70,7 @@ jobs:
           people=$(flag '^config/people\.yaml$')
           migrations=$(flag '^gateway/migrations/')
           gateway=$(flag '^(gateway/|config/|scripts/(compile|lib|repos)\.ts$)')
-          agents=$(flag '^(agents/|context/|evaluation/|config/|scripts/(deploy|compile|lib|repos)\.ts$|gateway/src/(toolDefs|managed|config)\.ts$)')
+          agents=$(flag '^(agents/|context/|evaluation/|skills/|config/|scripts/(deploy|compile|lib|repos)\.ts$|gateway/src/(toolDefs|managed|config)\.ts$)')
           out people "$people"
           out migrations "$migrations"
           out gateway "$gateway"

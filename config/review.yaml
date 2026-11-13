@@ -1,4 +1,4 @@
-# How Mira reviews pull requests (decisions 35 and 36). Compiled into the gateway,
+# How Mira reviews pull requests (decisions 35, 36 and 66). Her method is skills/pr-review/SKILL.md. Compiled into the gateway,
 # which computes each PR's risk band from these rules, checks the findings Mira
 # submits, and hands the matching notes to her. Changes arrive as reviewed PRs.
 
@@ -8,6 +8,7 @@ areas:
   security: Secrets, unsafe input handling, new dependencies, workflow and build changes, prompt injection in the PR.
   api_compat: Breaking changes to public APIs, the Concerto metamodel or serialised formats without a version bump.
   tests: Production code changed without tests, or tests that would pass whatever the code does.
+  design: Code that doesn't fit where it is, is more complex than it needs to be, over-engineered, or duplicates an existing helper.
   docs: User-facing changes without docs or a changelog entry where the repo keeps one.
   conventions: The repo's AGENTS.md, CONTRIBUTING.md and CODEOWNERS, read at the base branch.
   hygiene: DCO sign-off and licence headers. Never blocking on its own.

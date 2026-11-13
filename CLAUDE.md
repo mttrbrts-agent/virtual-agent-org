@@ -74,6 +74,7 @@ Matt writes British English. Keep messages plain and short.
 | `config/people.ids.yaml` | Discord and Telegram ids by name; git-ignored, loaded into the `PEOPLE_IDS` secret |
 | `config/discord.yaml` | Channel ids the bot posts to |
 | `context/accord.md` | Shared read-only context, written to the shared memory store |
+| `skills/pr-review/` | Mira's review method (decision 66), written to the shared memory store at deploy; `NOTICE.md` credits its sources |
 | `scripts/compile.ts` | Validates config and writes `gateway/src/generated/network.json` |
 | `scripts/deploy.ts` | Creates or updates agents, vaults, memory stores and deployments; writes `deployed.json` |
 | `gateway/src/` | The Worker: `index.ts` routes, `tools.ts` custom tools (defined in `toolDefs.ts`, input checked by `schema.ts`), `actions.ts` one spec per action kind (check, card, run), `executors.ts` dispatch, `review.ts` PR facts, risk and merge checks, `workflows.ts` workflow safety, `risk.ts` risk levels, `agents.ts` sessions and cards, `sessions.ts` event processing and housekeeping, `followUp.ts` waking Ada about blocked tasks and failed decisions, `githubEvents.ts` GitHub events (lapsing decisions, merge card refreshes, Mira's wakes, the daily check), `changes.ts` the self-improvement loop's changes (proposal checks, Mandla's tasks, `submit_change`, measuring) |
@@ -97,7 +98,7 @@ Merging to `main` deploys automatically: the `deploy` workflow works out what ch
 once Matt approves the run, does the steps below in order (decision 49). Run them by hand
 only for a fork without the workflow, or when a run fails.
 
-- **Changed an agent spec, `_protocol.md`, models or schedules?** Run `deploy:agents`.
+- **Changed an agent spec, `_protocol.md`, a skill, models or schedules?** Run `deploy:agents`.
 - **Changed gateway code, `permissions.yaml` or `review.yaml`?** Run `gateway:deploy`. Do both when in doubt.
 - **Added a migration?** Run `cd gateway && npm run migrate` before `gateway:deploy`.
 - **Changed someone's Discord or Telegram id?** Edit `config/people.ids.yaml`, then run

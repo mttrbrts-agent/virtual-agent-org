@@ -16,6 +16,7 @@ export const DEFAULT_REVIEW: ReviewConfig = {
     security: "Secrets, unsafe input, dependencies, workflow and build changes.",
     api_compat: "Breaking changes to public APIs or the Concerto metamodel.",
     tests: "Changes without tests, or tests that prove nothing.",
+    design: "Code that doesn't fit, is too complex, or duplicates a helper.",
     docs: "User-facing changes without docs.",
     conventions: "The repo's AGENTS.md, CONTRIBUTING.md and CODEOWNERS.",
     hygiene: "DCO sign-off and licence headers.",

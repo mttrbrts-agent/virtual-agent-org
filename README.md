@@ -42,6 +42,7 @@ network is governed; [docs/decisions.md](docs/decisions.md) records why.
 | `config/mcp_servers.yaml` | External tool servers and where each agent's token comes from |
 | `context/accord.md` | Shared, read-only project context for every agent |
 | `evaluation/` | Weekly evaluation rubric and scorecard schema |
+| `skills/` | Methods agents read for one kind of work, such as Mira's PR review (`skills/pr-review/`) |
 | `gateway/` | The Cloudflare Worker: bots, decision queue, custom tools, audit log |
 | `scripts/` | Config validation, deploys, and helpers such as `repo:add` |
 

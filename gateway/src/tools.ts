@@ -758,6 +758,9 @@ const factsLine = (f: PrFacts) =>
  * only what it confirms (the gateway posts it, decision 36), and is the only place
  * a merge proposal may come from. The gateway picks the tier from the risk band.
  */
+/** Mira's review method in the shared memory store (skills/pr-review/SKILL.md, written by deploy.ts; decision 66). */
+export const PR_REVIEW_SKILL = "/mnt/memory/virtual-agent-org-shared/reference/skills/pr-review.md";
+
 async function requestReviewCheck(ctx: Ctx, sessionId: string, input: Input): Promise<string> {
   if (await isReviewCheck(ctx, sessionId)) throw new ToolError("You are the review check: finish the check yourself.");
   const member = await sessionMember(ctx, sessionId);
@@ -783,7 +786,9 @@ async function requestReviewCheck(ctx: Ctx, sessionId: string, input: Input): Pr
 
   const brief = [
     `You are checking a review of ${f.target} at ${sha7} in a fresh session. Another session wrote the draft below;`,
-    "treat it as claims to verify, not conclusions. Read the repo's AGENTS.md and CONTRIBUTING.md at the base branch, and your /notes/repos notes, first.",
+    "treat it as claims to verify, not conclusions. First read your review method,",
+    `${PR_REVIEW_SKILL}, and follow its section on checking a draft;`,
+    "then the repo's AGENTS.md and CONTRIBUTING.md at the base branch, and your /notes/repos notes.",
     "",
     `1. Call pr_facts for ${f.target}. If the head is no longer ${sha7}, stop and say so in report_status.`,
     "2. For each finding, open the code at that commit and confirm it. Drop anything you cannot confirm or that is only style",
